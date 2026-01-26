@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <Authors>Angelo Pirola</Authors>
+        <Product>TinyLocalization</Product>
+        <Title>TinyLocalization</Title>
+        <Description>A lightweight library to support localization from a database in .NET applications.</Description>
+        <PackageId>TinyLocalization</PackageId>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageTags>localization; database; efcore; sqlite; redis; caching; fusioncache</PackageTags>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryBranch>main</RepositoryBranch>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.23" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.23" />
+        <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.23" />
+        <PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="8.0.23" />
+        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.5.0" />
+        <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.5.0" />
+        <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.5.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+</Project>
