@@ -1,45 +1,34 @@
 namespace TinyLocalization.Services.Interfaces;
 
 /// <summary>
-/// Optional publisher interface used to broadcast cache invalidation events for database-backed translations.
-/// Implementations are provided by the host application (for example a Redis-based pub/sub or message broker)
-/// and enable distributed cache invalidation when translations change.
+/// Optional publisher interface used by the library to publish cache invalidation events.
+/// Implementations are provided by the host application (for example, a Redis-based publisher)
+/// and are responsible for notifying subscribers that cached translations should be invalidated.
 /// </summary>
-/// <remarks>
-/// The library defines this interface so consuming applications can implement and register a concrete publisher
-/// to propagate invalidation events to other application instances. Implementations should be resilient and
-/// avoid throwing exceptions that would disrupt the calling flow; callers typically fire-and-forget or await the task
-/// depending on their requirements.
-/// </remarks>
 public interface ICacheInvalidationPublisher
 {
     /// <summary>
-    /// Publish an invalidation event for a single translation entry identified by resource, key and culture.
+    /// Publishes an invalidation event for a single cached translation entry identified by
+    /// the resource name, key and culture.
     /// </summary>
-    /// <param name="resource">
-    /// The logical resource name (for example a full type name or resource identifier) that scopes translations.
-    /// </param>
-    /// <param name="key">
-    /// The translation key within the resource to invalidate.
-    /// </param>
-    /// <param name="culture">
-    /// The culture name (for example "en" or "en-US") whose cached entry should be invalidated.
-    /// </param>
-    /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the publish operation.</param>
-    /// <returns>
-    /// A <see cref="Task"/> that completes when the publish operation has been initiated or completed, depending on implementation.
-    /// </returns>
+    /// <param name="resource">The logical resource (e.g. resource/table name) that contains the translation.</param>
+    /// <param name="key">The specific translation key within <paramref name="resource"/> to invalidate.</param>
+    /// <param name="culture">The culture (for example "en-US") of the translation to invalidate.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>A <see cref="System.Threading.Tasks.Task"/> representing the asynchronous operation.</returns>
     Task PublishSingleInvalidationAsync(string resource, string key, string culture, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Publish an invalidation event for all translations belonging to the specified resource (all keys and cultures).
+    /// Publishes an invalidation event for an entire resource. The publisher receives an explicit
+    /// collection of keys (and their cultures) so subscribers can remove the corresponding cache entries
+    /// without querying the database for the list of keys.
     /// </summary>
-    /// <param name="resource">
-    /// The logical resource name whose entire cache should be considered invalid and refreshed by subscribers.
+    /// <param name="resource">The logical resource (e.g. resource/table name) whose keys are being invalidated.</param>
+    /// <param name="keys">
+    /// An enumeration of <see cref="InvalidationKey"/> instances describing the specific keys and cultures
+    /// to invalidate for the specified resource.
     /// </param>
-    /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the publish operation.</param>
-    /// <returns>
-    /// A <see cref="Task"/> that completes when the publish operation has been initiated or completed, depending on implementation.
-    /// </returns>
-    Task PublishResourceInvalidationAsync(string resource, CancellationToken cancellationToken = default);
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>A <see cref="System.Threading.Tasks.Task"/> representing the asynchronous operation.</returns>
+    Task PublishResourceInvalidationAsync(string resource, IEnumerable<InvalidationKey> keys, CancellationToken cancellationToken = default);
 }
