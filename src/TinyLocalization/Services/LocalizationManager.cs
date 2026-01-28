@@ -8,78 +8,88 @@ using ZiggyCreatures.Caching.Fusion;
 namespace TinyLocalization.Services;
 
 /// <summary>
-/// Manager responsible for creating, updating and removing translations in the database
-/// and for evicting corresponding entries from the configured <see cref="IFusionCache"/>.
+/// Manager that modifies the translations database and invalidates associated FusionCache keys.
 /// </summary>
-/// <param name="dbContext">The <see cref="LocalizationDbContext"/> used to persist translations.</param>
-/// <param name="fusionCache">The <see cref="IFusionCache"/> instance used to cache translation lookups.</param>
-/// <param name="options">Configuration options controlling cache key prefixes and behavior.</param>
-public class LocalizationManager(LocalizationDbContext dbContext, IFusionCache fusionCache, DbLocalizationOptions options) : ILocalizationManager
+/// <param name="db">The <see cref="LocalizationDbContext"/> used to access translations in the database.</param>
+/// <param name="fusionCache">The <see cref="IFusionCache"/> used for local caching of translations.</param>
+/// <param name="options">Options controlling localization behavior, including cache key prefix.</param>
+/// <param name="publisher">Optional publisher used to broadcast cache invalidations to other instances.</param>
+public class LocalizationManager(LocalizationDbContext db, IFusionCache fusionCache, DbLocalizationOptions options,
+    ICacheInvalidationPublisher? publisher = null) : ILocalizationManager
 {
     /// <summary>
-    /// Builds the cache key for a specific translation entry using the configured cache prefix, resource, key and culture.
+    /// Builds the cache key used to store a translation in the cache.
     /// </summary>
-    /// <param name="resource">Logical resource name that scopes translations (for example a full type name).</param>
-    /// <param name="key">The translation key within the resource.</param>
+    /// <param name="resource">The resource name the translation belongs to.</param>
+    /// <param name="key">The translation key.</param>
     /// <param name="culture">
-    /// The culture name (for example "en" or "en-US"). When empty or <see langword="null"/> the method uses "_" as the culture segment.
+    /// The culture identifier for the translation. If <see cref="string.IsNullOrEmpty(string)"/> is true,
+    /// an underscore ("_") segment is used to represent the empty culture in the key.
     /// </param>
-    /// <returns>A string representing the composed cache key.</returns>
+    /// <returns>A string representing the full cache key for the given resource/key/culture combination.</returns>
     private string BuildCacheKey(string resource, string key, string culture)
     {
         var cultureSegment = string.IsNullOrEmpty(culture) ? "_" : culture;
-
         return $"{options.CacheKeyPrefix}:{resource}:{key}:{cultureSegment}";
     }
 
     /// <summary>
-    /// Adds a new translation or updates an existing translation in the database, then evicts the corresponding cache entry.
+    /// Adds a new translation or updates an existing one in the database, then invalidates the corresponding cache entry.
     /// </summary>
-    /// <param name="translation">The <see cref="Translation"/> entity to add or update (contains Resource, Key, Culture, Value).</param>
-    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to cancel the operation.</param>
-    /// <returns>A <see cref="Task"/> that completes when the operation has finished and cache was invalidated.</returns>
+    /// <param name="translation">The <see cref="Translation"/> entity to add or update.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to observe while waiting for the task to complete.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     /// <remarks>
-    /// The method attempts to find an existing translation by resource/key/culture. If found it updates the value;
-    /// otherwise it adds a new entity. After saving changes it removes the specific cache entry for that resource/key/culture.
+    /// If a translation with the same resource, key and culture already exists it will be updated; otherwise a new entry
+    /// will be added. After persisting changes it removes the matching FusionCache key locally and, when a publisher is
+    /// provided, publishes a single-item invalidation to other instances.
     /// </remarks>
     public async Task AddOrUpdateAsync(Translation translation, CancellationToken cancellationToken = default)
     {
-        var existing = await dbContext.Translations.FirstOrDefaultAsync(t
+        var existing = await db.Translations.FirstOrDefaultAsync(t
             => t.Resource == translation.Resource && t.Key == translation.Key && t.Culture == translation.Culture, cancellationToken);
 
         if (existing == null)
         {
-            dbContext.Translations.Add(translation);
+            db.Translations.Add(translation);
         }
         else
         {
             existing.Value = translation.Value;
-            dbContext.Translations.Update(existing);
+            db.Translations.Update(existing);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
 
-        // Invalidate cache for that exact resource/key/culture
+        // Invalidate cache for that exact resource/key/culture locally
         var cacheKey = BuildCacheKey(translation.Resource, translation.Key, translation.Culture);
         fusionCache.Remove(cacheKey, token: cancellationToken);
+
+        // Publish invalidation to other instances (if publisher is available)
+        if (publisher != null)
+        {
+            await publisher.PublishSingleInvalidationAsync(translation.Resource, translation.Key, translation.Culture, cancellationToken);
+        }
     }
 
     /// <summary>
-    /// Removes a translation entry for the specified resource/key/culture and evicts the corresponding cache entry.
+    /// Removes a translation for the specified resource/key/culture from the database and invalidates the cache.
     /// </summary>
-    /// <param name="resource">The logical resource name that scopes translations.</param>
+    /// <param name="resource">The resource name the translation belongs to.</param>
     /// <param name="key">The translation key to remove.</param>
-    /// <param name="culture">The culture name of the entry to remove (for example "en" or "en-US").</param>
-    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to cancel the operation.</param>
+    /// <param name="culture">The culture identifier of the translation to remove.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to observe while waiting for the task to complete.</param>
     /// <returns>
-    /// A <see cref="Task{Boolean}"/> that resolves to <c>true</c> if an entry was found and removed; otherwise <c>false</c>.
+    /// A task that returns <c>true</c> if the translation was found and removed; otherwise <c>false</c> when no matching
+    /// translation exists.
     /// </returns>
     /// <remarks>
-    /// If the translation exists it is removed from the database, changes are saved, and the specific cache key is removed.
+    /// After removing the translation and saving changes the method removes the corresponding FusionCache entry locally
+    /// and, if a publisher is configured, publishes a single-item invalidation to other instances.
     /// </remarks>
     public async Task<bool> RemoveAsync(string resource, string key, string culture, CancellationToken cancellationToken = default)
     {
-        var existing = await dbContext.Translations.FirstOrDefaultAsync(t
+        var existing = await db.Translations.FirstOrDefaultAsync(t
             => t.Resource == resource && t.Key == key && t.Culture == culture, cancellationToken);
 
         if (existing == null)
@@ -87,45 +97,67 @@ public class LocalizationManager(LocalizationDbContext dbContext, IFusionCache f
             return false;
         }
 
-        dbContext.Translations.Remove(existing);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        db.Translations.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
 
-        // invalidate cache
+        // invalidate cache locally
         var cacheKey = BuildCacheKey(resource, key, culture);
-
         fusionCache.Remove(cacheKey, token: cancellationToken);
+
+        // publish invalidation
+        if (publisher != null)
         {
-            return true;
+            await publisher.PublishSingleInvalidationAsync(resource, key, culture, cancellationToken);
         }
+
+        return true;
     }
 
     /// <summary>
-    /// Invalidates all cached entries for the specified resource by enumerating known cultures and keys.
+    /// Invalidates all cached entries for a given resource across known cultures and keys.
     /// </summary>
-    /// <param name="resource">The logical resource name whose cache entries should be invalidated.</param>
-    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to cancel the operation.</param>
-    /// <returns>A <see cref="Task"/> that completes when all matching cache entries have been removed.</returns>
+    /// <param name="resource">The resource name whose cache entries should be invalidated.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to observe while waiting for the task to complete.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     /// <remarks>
-    /// The method queries the database to discover distinct cultures for the resource and then for each culture
-    /// discovers distinct keys. For each key/culture pair it composes the cache key and calls <see cref="IFusionCache.Remove(string, CancellationToken)"/>.
+    /// The method enumerates the distinct cultures and keys for the resource in the database, removes the corresponding
+    /// FusionCache entries locally, and collects <see cref="InvalidationKey"/> instances to publish a resource-level
+    /// invalidation to other instances when a publisher is configured.
     /// </remarks>
     public async Task InvalidateResourceAsync(string resource, CancellationToken cancellationToken = default)
     {
         // enumerate known cultures for this resource and remove corresponding keys
-        var cultures = await dbContext.Translations.Where(t => t.Resource == resource)
-            .Select(t => t.Culture).Distinct().ToListAsync(cancellationToken);
+        var cultures = await db.Translations
+            .Where(t => t.Resource == resource)
+            .Select(t => t.Culture)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var invalidationKeys = new List<InvalidationKey>();
 
         foreach (var culture in cultures)
         {
             // for each key too
-            var keys = await dbContext.Translations.Where(t => t.Resource == resource && t.Culture == culture)
-                .Select(t => t.Key).Distinct().ToListAsync(cancellationToken);
+            var keys = await db.Translations
+                .Where(t => t.Resource == resource && t.Culture == culture)
+                .Select(t => t.Key)
+                .Distinct()
+                .ToListAsync(cancellationToken);
 
             foreach (var key in keys)
             {
                 var cacheKey = BuildCacheKey(resource, key, culture);
                 fusionCache.Remove(cacheKey, token: cancellationToken);
+
+                // Collect invalidation keys for publishing
+                invalidationKeys.Add(new InvalidationKey(key, culture));
             }
+        }
+
+        // Publish resource-level invalidation
+        if (publisher != null)
+        {
+            await publisher.PublishResourceInvalidationAsync(resource, invalidationKeys, cancellationToken);
         }
     }
 }
