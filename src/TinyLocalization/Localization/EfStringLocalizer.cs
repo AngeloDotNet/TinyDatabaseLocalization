@@ -2,149 +2,266 @@ using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using TinyLocalization.Data;
+using TinyLocalization.Options;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace TinyLocalization.Localization;
 
 /// <summary>
-/// Database-backed implementation of <see cref="IStringLocalizer"/> that queries
-/// translations from a <see cref="LocalizationDbContext"/>. A new IServiceScope is
-/// created for each lookup to obtain a scoped <see cref="LocalizationDbContext"/> instance.
+/// An <see cref="IStringLocalizer"/> implementation that reads translations from a database
+/// and uses <see cref="IFusionCache"/> to cache per-culture lookup results.
 /// </summary>
-/// <param name="serviceProvider">The root <see cref="IServiceProvider"/> used to create scopes and resolve the DB context.</param>
-/// <param name="resource">The logical resource name used to scope translations (typically the resource or type name).</param>
-public class EfStringLocalizer(IServiceProvider serviceProvider, string resource) : IStringLocalizer
+/// <param name="serviceProvider">
+/// The <see cref="IServiceProvider"/> used to create scoped services (for example to resolve
+/// a <see cref="LocalizationDbContext"/> for database queries).
+/// </param>
+/// <param name="resource">
+/// The resource name (logical resource/container) for which this localizer will resolve keys.
+/// This value is normalized to an empty string if null.
+/// </param>
+/// <param name="fusionCache">
+/// The <see cref="IFusionCache"/> instance used to cache translation lookups.
+/// </param>
+/// <param name="options">
+/// The <see cref="DbLocalizationOptions"/> instance controlling caching, fallback and key behavior.
+/// </param>
+public class EfStringLocalizer(IServiceProvider serviceProvider, string resource, IFusionCache fusionCache, DbLocalizationOptions options) : IStringLocalizer
 {
+    /// <summary>
+    /// Normalized resource name for lookups (never null).
+    /// </summary>
     private readonly string resource = resource ?? string.Empty;
 
     /// <summary>
-    /// Attempts to retrieve a translation value from the database for the given key and the current UI culture.
-    /// The lookup first attempts an exact culture match (e.g., "en-US") and then falls back to parent cultures
-    /// (e.g., "en") until the invariant culture is reached. A new scope and <see cref="LocalizationDbContext"/>
-    /// are created for each attempted culture lookup.
+    /// Query the database directly (no caching) for the given resource key and culture.
     /// </summary>
     /// <param name="name">The translation key to look up.</param>
+    /// <param name="cultureName">
+    /// The culture name to query for. Use an empty string to indicate the invariant culture.
+    /// </param>
     /// <returns>
-    /// The translated string if found; otherwise <see langword="null"/>.
+    /// The translation value if found; otherwise <c>null</c> if no entry exists for the specified key and culture.
     /// </returns>
-    private string? GetStringFromDb(string name)
+    private string? GetStringFromDb_NoCache(string name, string cultureName)
     {
-        // Determine the culture (CurrentUICulture)
+        using var scope = serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LocalizationDbContext>();
+
+        var entry = db.Translations.FirstOrDefault(t => t.Resource == resource && t.Key == name && t.Culture == cultureName);
+
+        return entry?.Value;
+    }
+
+    /// <summary>
+    /// Attempt to resolve the specified key using a culture fallback chain and per-culture caching.
+    /// The chain tries the current UI culture, optional parent cultures (if enabled by options),
+    /// an optional global fallback culture, and finally the invariant culture.
+    /// Each culture lookup is cached individually using <see cref="IFusionCache.GetOrSet{T}"/>.
+    /// </summary>
+    /// <param name="name">The translation key to resolve.</param>
+    /// <returns>
+    /// The first non-<c>null</c> translation value found along the fallback chain; otherwise <c>null</c>.
+    /// </returns>
+    private string? GetStringWithFallback(string name)
+    {
+        // Determine culture chain to try
         var culture = CultureInfo.CurrentUICulture;
+        var culturesToTry = new List<string>();
 
-        // Try exact culture then fallback to parent cultures
-        while (true)
+        if (!string.IsNullOrEmpty(culture.Name))
         {
-            using var scope = serviceProvider.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<LocalizationDbContext>();
+            culturesToTry.Add(culture.Name);
+        }
 
-            var cultureName = culture.Name;
-            var entry = db.Translations.FirstOrDefault(t => t.Resource == resource && t.Key == name && t.Culture == cultureName);
+        if (options.FallbackToParentCultures)
+        {
+            var parent = culture.Parent;
 
-            if (entry != null)
+            while (parent != null && !string.IsNullOrEmpty(parent.Name))
             {
-                return entry.Value;
-            }
+                if (!culturesToTry.Contains(parent.Name))
+                {
+                    culturesToTry.Add(parent.Name);
+                }
 
-            // If culture has parent (e.g., en-US -> en) try parent; if invariant (empty) stop
-            if (string.IsNullOrEmpty(culture.Name) || string.IsNullOrEmpty(culture.Parent?.Name))
-            {
-                break;
-            }
-
-            culture = culture.Parent;
-
-            if (culture == CultureInfo.InvariantCulture)
-            {
-                break;
+                parent = parent.Parent;
             }
         }
 
-        // not found
+        if (!string.IsNullOrEmpty(options.GlobalFallbackCulture) && !culturesToTry.Contains(options.GlobalFallbackCulture))
+        {
+            culturesToTry.Add(options.GlobalFallbackCulture!);
+        }
+
+        // Add invariant as last resort
+        if (!culturesToTry.Contains(string.Empty))
+        {
+            culturesToTry.Add(string.Empty);
+        }
+
+        // Try sequentially; each lookup is cached per culture
+        foreach (var cultureName in culturesToTry)
+        {
+            var cacheKey = BuildCacheKey(resource, name, cultureName);
+            // Use FusionCache GetOrSet with cache options
+            var value = fusionCache.GetOrSet<string?>(cacheKey, (ctx, ct) =>
+            {
+                ctx.Options.Duration = options.CacheDuration;
+
+                // Do DB lookup for this culture
+                var dbValue = GetStringFromDb_NoCache(name, cultureName);
+
+                // if null, store null to indicate not found (we'll treat as not found and continue fallback)
+                return dbValue;
+            });
+
+            if (value != null)
+            {
+                return value;
+            }
+        }
+
         return null;
     }
 
     /// <summary>
-    /// Gets the localized string for the specified key using the current UI culture.
+    /// Build a normalized cache key for the given resource, key and culture.
     /// </summary>
+    /// <param name="resource">The resource name used for grouping translations.</param>
     /// <param name="name">The translation key.</param>
+    /// <param name="cultureName">The culture name (empty string for invariant culture).</param>
+    /// <returns>A string cache key composed of the configured cache prefix and provided segments.</returns>
+    private string BuildCacheKey(string resource, string name, string cultureName)
+    {
+        // Use prefix so cache keys are grouped and easier to remove
+        // Note: cultureName can be empty string for invariant; normalize to "_" to avoid empty segments if desired
+        var cultureSegment = string.IsNullOrEmpty(cultureName) ? "_" : cultureName;
+
+        return $"{options.CacheKeyPrefix}:{resource}:{name}:{cultureSegment}";
+    }
+
+    /// <summary>
+    /// Gets the localized string for the specified key using the configured fallback strategy.
+    /// If a translation is found, returns a <see cref="LocalizedString"/> with <see cref="LocalizedString.ResourceNotFound"/>
+    /// set to <c>false</c>. If not found, behavior depends on <see cref="DbLocalizationOptions.ReturnKeyIfNotFound"/>.
+    /// </summary>
+    /// <param name="name">The translation key to lookup.</param>
     /// <returns>
-    /// A <see cref="LocalizedString"/> containing the translation if found; otherwise the key itself.
-    /// The <see cref="LocalizedString.ResourceNotFound"/> flag is set to <see langword="true"/> when no translation was found.
+    /// A <see cref="LocalizedString"/> with the resolved or fallback value. If the key was not found and
+    /// <see cref="DbLocalizationOptions.ReturnKeyIfNotFound"/> is <c>true</c>, the key is returned as the value
+    /// and <see cref="LocalizedString.ResourceNotFound"/> will be <c>true</c>.
     /// </returns>
     public LocalizedString this[string name]
     {
         get
         {
-            var value = GetStringFromDb(name);
+            var value = GetStringWithFallback(name);
 
-            return new LocalizedString(name, value ?? name, resourceNotFound: value == null);
+            if (value != null)
+            {
+                return new LocalizedString(name, value, resourceNotFound: false);
+            }
+
+            if (options.ReturnKeyIfNotFound)
+            {
+                return new LocalizedString(name, name, resourceNotFound: true);
+            }
+
+            return new LocalizedString(name, string.Empty, resourceNotFound: true);
         }
     }
 
     /// <summary>
-    /// Gets the localized, formatted string for the specified key and arguments using the current UI culture.
-    /// If the translation is not found, the key is used as the format string.
+    /// Gets the localized and formatted string for the specified key, formatting it with the provided arguments.
     /// </summary>
-    /// <param name="name">The translation key.</param>
-    /// <param name="arguments">Format arguments to apply to the retrieved format string.</param>
+    /// <param name="name">The translation key to lookup.</param>
+    /// <param name="arguments">Format arguments used with <see cref="string.Format(string, object[])"/> against the found format.</param>
     /// <returns>
-    /// A <see cref="LocalizedString"/> containing the formatted translation (or formatted key when translation is missing).
-    /// The <see cref="LocalizedString.ResourceNotFound"/> flag is set to <see langword="true"/> when no translation was found.
+    /// A <see cref="LocalizedString"/> containing the formatted value. If the format is not found and
+    /// <see cref="DbLocalizationOptions.ReturnKeyIfNotFound"/> is <c>true</c>, the <paramref name="name"/> is used
+    /// as the format; otherwise an empty string is used.
     /// </returns>
     public LocalizedString this[string name, params object[] arguments]
     {
         get
         {
-            var format = GetStringFromDb(name) ?? name;
+            var format = GetStringWithFallback(name) ?? (options.ReturnKeyIfNotFound ? name : string.Empty);
             var value = string.Format(format, arguments);
-            var notFound = format == name;
+            var notFound = (format == name) || string.IsNullOrEmpty(format);
 
             return new LocalizedString(name, value, notFound);
         }
     }
 
     /// <summary>
-    /// Returns all translations for the current UI culture (and optionally its parent culture) for the configured resource.
+    /// Returns all localized strings for the current UI culture and optionally parent cultures.
+    /// Results are aggregated in order of culture priority (current culture first), and the first
+    /// occurrence of a key takes precedence.
     /// </summary>
     /// <param name="includeParentCultures">
-    /// If <see langword="true"/>, translations for the immediate parent culture (if any) are included in the result set in addition
-    /// to the current UI culture. Only a single-level parent is considered by this implementation.
+    /// When <c>true</c>, and when <see cref="DbLocalizationOptions.FallbackToParentCultures"/> is enabled,
+    /// parent cultures are also queried (from nearest to farthest parent).
     /// </param>
     /// <returns>
-    /// An enumeration of <see cref="LocalizedString"/> containing key/value pairs for the matching translations.
-    /// The returned collection is materialized into a <see cref="List{T}"/>.
+    /// An enumerable of <see cref="LocalizedString"/> instances representing all resolved keys for the
+    /// requested cultures (duplicates removed in favor of higher priority cultures).
     /// </returns>
     public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures)
     {
-        var culture = CultureInfo.CurrentUICulture.Name;
-        using var scope = serviceProvider.CreateScope();
+        // For GetAllStrings we'll try current culture and, if requested, parents
+        var cultures = new List<string> { CultureInfo.CurrentUICulture.Name };
 
-        var db = scope.ServiceProvider.GetRequiredService<LocalizationDbContext>();
-        var query = db.Translations.Where(t => t.Resource == resource && t.Culture == culture);
-
-        // If includeParentCultures requested, also include parent culture entries
-        if (includeParentCultures)
+        if (includeParentCultures && options.FallbackToParentCultures)
         {
             var parent = CultureInfo.CurrentUICulture.Parent;
 
-            if (!string.IsNullOrEmpty(parent?.Name))
+            while (parent != null && !string.IsNullOrEmpty(parent.Name))
             {
-                var parentName = parent.Name;
-                query = query.Concat(db.Translations.Where(t => t.Resource == resource && t.Culture == parentName));
+                cultures.Add(parent.Name);
+                parent = parent.Parent;
             }
         }
 
-        return query.AsEnumerable().Select(t => new LocalizedString(t.Key, t.Value, false)).ToList();
+        // Also include global fallback if configured
+        if (!string.IsNullOrEmpty(options.GlobalFallbackCulture) && !cultures.Contains(options.GlobalFallbackCulture))
+        {
+            cultures.Add(options.GlobalFallbackCulture!);
+        }
+
+        var results = new Dictionary<string, LocalizedString>();
+
+        using var scope = serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LocalizationDbContext>();
+
+        foreach (var culture in cultures)
+        {
+            var list = db.Translations
+                .Where(t => t.Resource == resource && t.Culture == culture)
+                .AsEnumerable();
+
+            foreach (var t in list)
+            {
+                // keep first occurrence (higher priority culture first)
+                if (!results.ContainsKey(t.Key))
+                {
+                    results[t.Key] = new LocalizedString(t.Key, t.Value, resourceNotFound: false);
+                }
+            }
+        }
+
+        return results.Values.ToList();
     }
 
     /// <summary>
-    /// Returns an <see cref="IStringLocalizer"/> for the specified culture.
+    /// Returns an <see cref="IStringLocalizer"/> scoped to the provided culture. This implementation
+    /// relies on <see cref="CultureInfo.CurrentUICulture"/> for lookups and therefore simply returns
+    /// the current instance. Callers who want culture-scoped behavior should set <see cref="CultureInfo.CurrentUICulture"/>
+    /// before calling into this localizer.
     /// </summary>
-    /// <param name="culture">The culture for which a localizer is requested.</param>
-    /// <remarks>
-    /// This implementation does not produce culture-specific instances. Consumers should set <see cref="CultureInfo.CurrentUICulture"/>
-    /// externally before calling into this localizer. Consequently this method returns the same instance.
-    /// </remarks>
-    /// <returns>The current <see cref="IStringLocalizer"/> instance.</returns>
-    public IStringLocalizer WithCulture(CultureInfo culture) => this;
+    /// <param name="culture">The culture to scope to (not used by this implementation).</param>
+    /// <returns>This instance (<c>this</c>).</returns>
+    public IStringLocalizer WithCulture(CultureInfo culture) =>
+        // We rely on CultureInfo.CurrentUICulture; to honor WithCulture we could clone options,
+        // but for simplicity return this (callers can set CurrentUICulture externally).
+        this;
 }
