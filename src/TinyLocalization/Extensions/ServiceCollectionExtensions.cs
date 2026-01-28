@@ -6,6 +6,9 @@ using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
 using TinyLocalization.Data;
 using TinyLocalization.Localization;
+using TinyLocalization.Options;
+using TinyLocalization.Services;
+using TinyLocalization.Services.Interfaces;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
@@ -32,6 +35,48 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDbLocalization(this IServiceCollection services)
         => services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>()
             .AddTransient(typeof(IStringLocalizer<>), typeof(EfStringLocalizerGeneric<>));
+
+    // registers factory and generic localizer T; the caller must also register the LocalizationDbContext
+
+    /// <summary>
+    /// Registers EF-based localization services and optional configuration.
+    /// </summary>
+    /// <param name="services">The service collection to which localization services will be added.</param>
+    /// <param name="configureOptions">
+    /// An optional configuration callback for <see cref="DbLocalizationOptions"/>. If provided, it will be invoked
+    /// to customize options prior to registration. If null, default options are used.
+    /// </param>
+    /// <returns>The modified <see cref="IServiceCollection"/> instance for chaining.</returns>
+    /// <remarks>
+    /// This overload performs the following registrations:
+    /// - Registers a singleton instance of <see cref="DbLocalizationOptions"/> (populated via <paramref name="configureOptions"/> if provided).
+    /// - Registers <see cref="EfStringLocalizerFactory"/> as the implementation of <see cref="IStringLocalizerFactory"/>.
+    /// - Registers an open-generic mapping so that <see cref="IStringLocalizer{T}"/> resolves to <see cref="EfStringLocalizerGeneric{T}"/>.
+    /// - Registers <see cref="ILocalizationManager"/> as a scoped service implemented by <see cref="LocalizationManager"/>.
+    ///
+    /// Note: The hosting application is expected to register the <see cref="IFusionCache"/> instance (FusionCache)
+    /// and the <see cref="LocalizationDbContext"/> separately (for example by calling <see cref="AddLocalizationDbContextSqlite"/> or another EF Core registration).
+    /// </remarks>
+    public static IServiceCollection AddDbLocalization(this IServiceCollection services, Action<DbLocalizationOptions>? configureOptions = null)
+    {
+        var options = new DbLocalizationOptions();
+        configureOptions?.Invoke(options);
+
+        // register options instance
+        services.AddSingleton(options);
+
+        // Register our factory as the IStringLocalizerFactory
+        services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>();
+
+        // Register open-generic wrapper so IStringLocalizer<T> is available for injection
+        services.AddTransient(typeof(IStringLocalizer<>), typeof(EfStringLocalizerGeneric<>));
+
+        // Register localization manager for updates/invalidation
+        services.AddScoped<ILocalizationManager, LocalizationManager>();
+
+        // Expect the hosting app to register IFusionCache and LocalizationDbContext
+        return services;
+    }
 
     /// <summary>
     /// Adds the <see cref="LocalizationDbContext"/> configured to use SQLite.
