@@ -1,10 +1,8 @@
 namespace TinyLocalization.Services;
 
 /// <summary>
-/// Payload element used for resource-level invalidation: a pair containing a translation <see cref="Key"/>
-/// and the target <see cref="Culture"/>. Instances of this record are typically included in resource-level
-/// invalidation messages to indicate which specific keys and cultures should be evicted or refreshed by subscribers.
+/// Represents a unique key for invalidation, consisting of a key string and a culture identifier.
 /// </summary>
-/// <param name="Key">The translation key within the resource to be invalidated.</param>
-/// <param name="Culture">The culture name (for example "en" or "en-US") whose cached entry should be invalidated.</param>
+/// <param name="Key">The unique identifier used for invalidation purposes.</param>
+/// <param name="Culture">The culture associated with the key, which may influence localization or regional settings.</param>
 public record InvalidationKey(string Key, string Culture);
