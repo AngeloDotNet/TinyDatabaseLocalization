@@ -3,10 +3,13 @@ using TinyLocalization.Entities;
 namespace TinyLocalization.Services.Interfaces;
 
 /// <summary>
-/// Manages translation data and cache invalidation operations for the library.
-/// Implementations are responsible for persisting <see cref="Translation"/> entities,
-/// removing translations, and triggering invalidation of cached translations when needed.
+/// Defines methods for managing localization resources and translations in an asynchronous manner.
 /// </summary>
+/// <remarks>The ILocalizationManager interface provides a contract for adding, updating, removing, and
+/// invalidating translations for different resources and cultures. It is designed to support efficient localization
+/// management in applications that require dynamic or runtime translation updates. Implementations should ensure thread
+/// safety and handle cancellation tokens appropriately to support responsive and scalable localization
+/// operations.</remarks>
 public interface ILocalizationManager
 {
     //Task<string?> GetTranslationAsync(string resource, string key, string culture, CancellationToken cancellationToken = default);
@@ -18,35 +21,41 @@ public interface ILocalizationManager
     //Task<IEnumerable<(string Key, string Value, string Culture)>> ExportTranslationsAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Adds a new <see cref="Translation"/> or updates an existing one.
-    /// Implementations should insert the provided <paramref name="translation"/> if it does not exist,
-    /// or update the existing entry that matches its identifying properties.
+    /// Adds a new translation or updates an existing translation entry in the localization system.
     /// </summary>
-    /// <param name="translation">The <see cref="Translation"/> entity to add or update.</param>
-    /// <param name="cancellationToken">A <see cref="System.Threading.CancellationToken"/> to observe while waiting for the operation to complete.</param>
-    /// <returns>A <see cref="System.Threading.Tasks.Task"/> that completes when the operation finishes.</returns>
+    /// <remarks>If a translation entry matching the resource, key, and culture already exists, its value is
+    /// updated; otherwise, a new entry is created. Ensure that the translation object contains valid and complete
+    /// information before calling this method.</remarks>
+    /// <param name="translation">The translation object containing the resource, key, value, and culture information to add or update. Cannot be
+    /// null.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
+    /// <returns>A task that represents the asynchronous add or update operation.</returns>
     Task AddOrUpdateAsync(Translation translation, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes a translation entry identified by the specified <paramref name="resource"/>, <paramref name="key"/> and <paramref name="culture"/>.
+    /// Asynchronously removes a resource entry identified by the specified key and culture from the given resource set.
     /// </summary>
-    /// <param name="resource">The logical resource (for example a resource/table name) containing the translation.</param>
-    /// <param name="key">The translation key to remove.</param>
-    /// <param name="culture">The culture (for example "en-US") of the translation to remove.</param>
-    /// <param name="cancellationToken">A <see cref="System.Threading.CancellationToken"/> to observe while waiting for the operation to complete.</param>
-    /// <returns>
-    /// A <see cref="System.Threading.Tasks.Task{TResult}"/> that returns <see langword="true"/> if a translation was removed;
-    /// otherwise <see langword="false"/> if no matching translation was found.
-    /// </returns>
+    /// <remarks>If the specified resource, key, or culture does not exist, the method returns <see
+    /// langword="false"/>. The operation can be canceled by passing a cancellation token.</remarks>
+    /// <param name="resource">The name of the resource set from which to remove the entry. Cannot be null or empty.</param>
+    /// <param name="key">The unique key that identifies the resource entry to remove. Cannot be null or empty.</param>
+    /// <param name="culture">The culture code that specifies the culture of the resource entry to remove. Cannot be null or empty.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result is <see langword="true"/> if the resource
+    /// entry was successfully removed; otherwise, <see langword="false"/>.</returns>
     Task<bool> RemoveAsync(string resource, string key, string culture, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Invalidates cached translations for the specified <paramref name="resource"/>.
-    /// Implementations may clear local caches and/or publish invalidation events to notify
-    /// other subscribers (for example through an <c>ICacheInvalidationPublisher</c>).
+    /// Asynchronously invalidates the specified resource, ensuring that any cached data is refreshed on the next
+    /// access.
     /// </summary>
-    /// <param name="resource">The logical resource whose cached translations should be invalidated.</param>
-    /// <param name="cancellationToken">A <see cref="System.Threading.CancellationToken"/> to observe while waiting for the operation to complete.</param>
-    /// <returns>A <see cref="System.Threading.Tasks.Task"/> that completes when the invalidation process finishes.</returns>
+    /// <remarks>This method may take additional time to complete depending on the current state of the cache
+    /// and the resource being invalidated. Callers should handle cancellation appropriately to avoid unnecessary work
+    /// if the operation is no longer required.</remarks>
+    /// <param name="resource">The name of the resource to invalidate. This must correspond to a valid resource identifier present in the
+    /// cache.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation. The default value is <see
+    /// cref="CancellationToken.None"/>.</param>
+    /// <returns>A task that represents the asynchronous operation of invalidating the resource.</returns>
     Task InvalidateResourceAsync(string resource, CancellationToken cancellationToken = default);
 }
