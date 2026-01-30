@@ -2,9 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Localization;
-using Microsoft.Extensions.Logging;
 using TinyLocalization.Data;
+using TinyLocalization.Enums;
 using TinyLocalization.Localization;
 using TinyLocalization.Options;
 using TinyLocalization.Services;
@@ -21,49 +22,36 @@ namespace TinyLocalization.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the EF-based localization factory and the generic localizer wrapper.
+    /// Adds database-backed localization services to the service collection.
     /// </summary>
-    /// <param name="services">The service collection to add the services to.</param>
-    /// <returns>The modified <see cref="IServiceCollection"/> instance for chaining.</returns>
-    /// <remarks>
-    /// This method registers <see cref="EfStringLocalizerFactory"/> as the implementation of
-    /// <see cref="IStringLocalizerFactory"/> and registers an open-generic
-    /// <see cref="IStringLocalizer{T}"/> mapping to <see cref="EfStringLocalizerGeneric{T}"/>.
-    /// The caller is still responsible for registering the <see cref="LocalizationDbContext"/> (for example
-    /// via <see cref="AddLocalizationDbContextSqlite"/> or a custom registration).
-    /// </remarks>
+    /// <param name="services"></param>
+    /// <returns></returns>
     public static IServiceCollection AddDbLocalization(this IServiceCollection services)
-        => services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>()
-            .AddTransient(typeof(IStringLocalizer<>), typeof(EfStringLocalizerGeneric<>));
+    {
+        services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>();
+        services.AddTransient(typeof(IStringLocalizer<>), typeof(EfStringLocalizerGeneric<>));
 
-    // registers factory and generic localizer T; the caller must also register the LocalizationDbContext
+        return services;
+    }
 
     /// <summary>
-    /// Registers EF-based localization services and optional configuration.
+    /// Adds services required for database-backed localization to the specified service collection, with optional
+    /// configuration of localization options.
     /// </summary>
-    /// <param name="services">The service collection to which localization services will be added.</param>
-    /// <param name="configureOptions">
-    /// An optional configuration callback for <see cref="DbLocalizationOptions"/>. If provided, it will be invoked
-    /// to customize options prior to registration. If null, default options are used.
-    /// </param>
-    /// <returns>The modified <see cref="IServiceCollection"/> instance for chaining.</returns>
-    /// <remarks>
-    /// This overload performs the following registrations:
-    /// - Registers a singleton instance of <see cref="DbLocalizationOptions"/> (populated via <paramref name="configureOptions"/> if provided).
-    /// - Registers <see cref="EfStringLocalizerFactory"/> as the implementation of <see cref="IStringLocalizerFactory"/>.
-    /// - Registers an open-generic mapping so that <see cref="IStringLocalizer{T}"/> resolves to <see cref="EfStringLocalizerGeneric{T}"/>.
-    /// - Registers <see cref="ILocalizationManager"/> as a scoped service implemented by <see cref="LocalizationManager"/>.
-    ///
-    /// Note: The hosting application is expected to register the <see cref="IFusionCache"/> instance (FusionCache)
-    /// and the <see cref="LocalizationDbContext"/> separately (for example by calling <see cref="AddLocalizationDbContextSqlite"/> or another EF Core registration).
-    /// </remarks>
-    public static IServiceCollection AddDbLocalization(this IServiceCollection services, Action<DbLocalizationOptions>? configureOptions = null)
+    /// <remarks>This method registers the necessary services for database localization, including
+    /// implementations of <see cref="IStringLocalizerFactory"/>, <see cref="IStringLocalizer{T}"/>, and <see
+    /// cref="ILocalizationManager"/>. The hosting application is expected to register <c>IFusionCache</c> and
+    /// <c>LocalizationDbContext</c> separately for full functionality.</remarks>
+    /// <param name="services">The service collection to which the localization services will be added. Cannot be null.</param>
+    /// <param name="configuration">An optional delegate to configure the <see cref="DbLocalizationOptions"/> instance used for localization.</param>
+    /// <returns>The same <see cref="IServiceCollection"/> instance so that additional calls can be chained.</returns>
+    public static IServiceCollection AddDbLocalization(this IServiceCollection services, Action<DbLocalizationOptions>? configuration = null)
     {
-        var options = new DbLocalizationOptions();
-        configureOptions?.Invoke(options);
+        var dbLocalizationOptions = new DbLocalizationOptions();
+        configuration?.Invoke(dbLocalizationOptions);
 
         // register options instance
-        services.AddSingleton(options);
+        services.TryAddSingleton(dbLocalizationOptions);
 
         // Register our factory as the IStringLocalizerFactory
         services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>();
@@ -79,173 +67,266 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the <see cref="LocalizationDbContext"/> configured to use SQLite.
+    /// Configures and registers a localization database context of the specified type with provider-specific options in
+    /// the dependency injection container.
     /// </summary>
-    /// <param name="services">The service collection to add the DbContext to.</param>
-    /// <param name="connectionString">The SQLite connection string to use when configuring the DbContext.</param>
-    /// <returns>The modified <see cref="IServiceCollection"/> instance for chaining.</returns>
-    /// <remarks>
-    /// Convenience helper that calls <c>options.UseSqlite(connectionString)</c> when registering
-    /// <see cref="LocalizationDbContext"/>. Use this in development or lightweight scenarios; for production,
-    /// the caller may prefer a different DbContext configuration.
-    /// </remarks>
-    public static IServiceCollection AddLocalizationDbContextSqlite(this IServiceCollection services, string connectionString)
-        => services.AddDbContext<LocalizationDbContext>(options =>
-        {
-            options.UseSqlite(connectionString);
-            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+    /// <remarks>This method enables localization support by configuring the specified DbContext with the
+    /// appropriate database provider and options. It supports SQLite and SQL Server providers, and applies additional
+    /// configuration such as migrations assembly, query splitting behavior, and logging options based on the provided
+    /// DatabaseContextOptions.</remarks>
+    /// <typeparam name="TContext">The type of the DbContext to configure for localization. Must inherit from DbContext.</typeparam>
+    /// <param name="services">The IServiceCollection to which the localization DbContext and related services will be added.</param>
+    /// <param name="configuration">An optional delegate to configure the database context options, such as database type, connection string, and
+    /// provider-specific settings.</param>
+    /// <returns>The IServiceCollection instance with the localization DbContext configured for further chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown if the database type is set to 'None' or if the connection string is null, empty, or consists only of
+    /// white-space characters.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the specified database type is not supported by the method.</exception>
+    public static IServiceCollection AddLocalizationDbContext<TContext>(this IServiceCollection services, Action<DatabaseContextOptions>? configuration = null) where TContext : DbContext
+    {
+        var databaseContextOptions = new DatabaseContextOptions();
+        configuration?.Invoke(databaseContextOptions);
 
-            options.LogTo(Console.WriteLine, [RelationalEventId.CommandExecuted]);
-            options.EnableSensitiveDataLogging();
+        services.TryAddSingleton(databaseContextOptions);
+
+        if (databaseContextOptions.DatabaseType == DatabaseType.None)
+        {
+            throw new ArgumentException("Database type cannot be 'None' when configuring LocalizationDbContext.");
+        }
+
+        if (string.IsNullOrWhiteSpace(databaseContextOptions.ConnectionString))
+        {
+            throw new ArgumentException("Connection string must be provided when configuring LocalizationDbContext.");
+        }
+
+        var migrationsAssembly = databaseContextOptions.MigrationsAssembly ?? typeof(TContext).Assembly.FullName;
+
+        services.AddDbContext<LocalizationDbContext>(builder =>
+        {
+            // provider-specific configuration
+            switch (databaseContextOptions.DatabaseType)
+            {
+                case DatabaseType.SQLite:
+                    builder.UseSqlite(databaseContextOptions.ConnectionString, sql =>
+                    {
+                        sql.MigrationsAssembly(migrationsAssembly);
+                        sql.MigrationsHistoryTable(databaseContextOptions.MigrationsHistoryTable);
+
+                        sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                    });
+                    break;
+
+                case DatabaseType.SqlServer:
+                    builder.UseSqlServer(databaseContextOptions.ConnectionString, sql =>
+                    {
+                        sql.MigrationsAssembly(migrationsAssembly);
+                        sql.MigrationsHistoryTable(databaseContextOptions.MigrationsHistoryTable);
+
+                        sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                        sql.UseCompatibilityLevel(databaseContextOptions.SQLServerCompatibilityLevel);
+                    });
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(databaseContextOptions.DatabaseType), "Unsupported database type");
+            }
+
+            // common configuration
+            //builder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking); // optional: disable tracking for read-only scenarios
+
+            // Log only command executed events (pass array of event ids)
+            builder.LogTo(Console.WriteLine, [RelationalEventId.CommandExecuted]);
+
+            // enable sensitive logging only if explicitly requested
+            if (databaseContextOptions.EnableSensitiveDataLogging)
+            {
+                builder.EnableSensitiveDataLogging();
+            }
+
+            // optionally enable detailed errors if your options expose it
+            if (databaseContextOptions.EnableDetailedErrors)
+            {
+                builder.EnableDetailedErrors();
+            }
         });
 
+        return services;
+    }
+
     /// <summary>
-    /// Configures a FusionCache instance with sensible default in-memory options and System.Text.Json serialization.
+    /// Configures and adds the default FusionCache services to the specified <see cref="IServiceCollection"/>, enabling
+    /// customizable caching options for the application.
     /// </summary>
-    /// <param name="services">The Fusion cache builder to configure.</param>
-    /// <returns>The modified <see cref="IFusionCacheBuilder"/> for chaining.</returns>
-    /// <remarks>
-    /// - Sets L1 memory cache durations to 5 minutes for default and tags entries.
-    /// - Sets a default entry duration of 10 minutes and enables fail-safe behavior with a max duration of 2 hours.
-    /// - Configures eager refresh, factory timeouts and a System.Text.Json serializer.
-    /// This helper does not add any distributed cache/backplane; use the distributed helpers for Redis integration.
-    /// </remarks>
-    public static IFusionCacheBuilder AddFusionCache(this IFusionCacheBuilder services)
-        => services.AddFusionCache()
+    /// <remarks>This method sets up FusionCache with default options, including memory cache durations,
+    /// fail-safe settings, and eager refresh thresholds. The configuration delegate can be used to override these
+    /// defaults to suit specific application requirements.</remarks>
+    /// <param name="services">The <see cref="IServiceCollection"/> to which the FusionCache services will be registered.</param>
+    /// <param name="configuration">An optional delegate to configure the <see cref="DefaultFusionCacheOptions"/>, allowing customization of cache
+    /// behavior and settings.</param>
+    /// <returns>The updated <see cref="IServiceCollection"/> instance with FusionCache services registered.</returns>
+    public static IServiceCollection AddDefaultFusionCache(this IServiceCollection services, Action<DefaultFusionCacheOptions>? configuration = null)
+    {
+        var fusionCacheOptions = new DefaultFusionCacheOptions();
+        configuration?.Invoke(fusionCacheOptions);
+
+        services.TryAddSingleton(fusionCacheOptions);
+
+        services.AddFusionCache()
             .WithOptions(options =>
             {
                 // Keep data in L1 for 5 minutes, then get it again from L2
-                options.DefaultEntryOptions.MemoryCacheDuration = TimeSpan.FromMinutes(5); // This is for normal entries                
-                options.TagsDefaultEntryOptions.MemoryCacheDuration = TimeSpan.FromMinutes(5); // This is for tagging-related entries
+
+                // This is for normal entries
+                options.DefaultEntryOptions.MemoryCacheDuration = TimeSpan.FromMinutes(fusionCacheOptions.DefaultMemoryCacheDuration);
+
+                // This is for tagging-related entries
+                options.TagsDefaultEntryOptions.MemoryCacheDuration = TimeSpan.FromMinutes(fusionCacheOptions.TagsDefaultMemoryCacheDuration);
             })
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
                 // Cache duration
-                Duration = TimeSpan.FromMinutes(10),
+                Duration = TimeSpan.FromMinutes(fusionCacheOptions.CacheDurationInMinutes),
 
                 // Fail-safe options
-                IsFailSafeEnabled = true,
-                FailSafeMaxDuration = TimeSpan.FromHours(2),
-                FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+                IsFailSafeEnabled = fusionCacheOptions.FailSafeModeEnabled,
+                FailSafeMaxDuration = TimeSpan.FromMinutes(fusionCacheOptions.FailSafeMaxDurationInMinutes),
+                FailSafeThrottleDuration = TimeSpan.FromSeconds(fusionCacheOptions.FailSafeThrottleDurationInSeconds),
 
                 // Eager refresh
-                EagerRefreshThreshold = 0.9f,
+                EagerRefreshThreshold = fusionCacheOptions.EagerRefreshThreshold,
 
                 // Factory timeouts
-                FactorySoftTimeout = TimeSpan.FromMilliseconds(100),
-                FactoryHardTimeout = TimeSpan.FromMilliseconds(1500)
+                FactorySoftTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactorySoftTimeoutInMilliseconds),
+                FactoryHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactoryHardTimeoutInMilliseconds)
             })
             // Add FusionCache serialization based on System.Text.Json
             .WithSerializer(new FusionCacheSystemTextJsonSerializer());
 
+        return services;
+    }
+
     /// <summary>
-    /// Configures a FusionCache instance with Redis as distributed cache and Redis-based backplane.
+    /// Adds distributed FusionCache services to the specified <see cref="IServiceCollection"/>, enabling advanced
+    /// caching capabilities with distributed and fail-safe options.
     /// </summary>
-    /// <param name="services">The Fusion cache builder to configure.</param>
-    /// <param name="redisConnectionString">The connection string used to configure Redis for distributed cache and backplane.</param>
-    /// <returns>The modified <see cref="IFusionCacheBuilder"/> for chaining.</returns>
-    /// <remarks>
-    /// - Enables a distributed cache circuit breaker duration of 2 minutes.
-    /// - Configures default entry options similar to <see cref="AddFusionCache"/> plus distributed cache timeouts and jittering.
-    /// - Adds a Redis distributed cache (<see cref="RedisCache"/>) and a Redis backplane (<see cref="RedisBackplane"/>).
-    /// Use this helper when you want FusionCache to use Redis as a shared L2 cache and to propagate invalidation messages.
-    /// </remarks>
-    public static IFusionCacheBuilder AddFusionDistributedCache(this IFusionCacheBuilder services, string redisConnectionString)
-        => services.AddFusionCache()
+    /// <remarks>This method configures FusionCache with distributed caching support, including Redis
+    /// integration and backplane functionality. It enables customization of cache durations, fail-safe mechanisms,
+    /// eager refresh, and distributed cache timeouts. Use the <paramref name="configuration"/> parameter to tailor
+    /// caching behavior to application requirements.</remarks>
+    /// <param name="services">The <see cref="IServiceCollection"/> to which the distributed FusionCache services will be registered.</param>
+    /// <param name="configuration">An optional delegate to configure <see cref="DistributedFusionCacheOptions"/>, allowing customization of cache
+    /// behavior, durations, fail-safe settings, and distributed cache integration.</param>
+    /// <returns>The same <see cref="IServiceCollection"/> instance, allowing for method chaining.</returns>
+    public static IServiceCollection AddDistributedFusionCache(this IServiceCollection services, Action<DistributedFusionCacheOptions>? configuration = null)
+    {
+        var fusionCacheOptions = new DistributedFusionCacheOptions();
+        configuration?.Invoke(fusionCacheOptions);
+
+        services.TryAddSingleton(fusionCacheOptions);
+
+        services.AddFusionCache()
             .WithOptions(options =>
             {
-                options.DistributedCacheCircuitBreakerDuration = TimeSpan.FromMinutes(2);
+                options.DistributedCacheCircuitBreakerDuration = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheCircuitBreakerDurationInMinutes);
             })
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
                 // Cache duration
-                Duration = TimeSpan.FromMinutes(10),
+                Duration = TimeSpan.FromMinutes(fusionCacheOptions.CacheDurationInMinutes),
 
                 // Fail-safe options
-                IsFailSafeEnabled = true,
-                FailSafeMaxDuration = TimeSpan.FromHours(2),
-                FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+                IsFailSafeEnabled = fusionCacheOptions.FailSafeModeEnabled,
+                FailSafeMaxDuration = TimeSpan.FromMinutes(fusionCacheOptions.FailSafeMaxDurationInMinutes),
+                FailSafeThrottleDuration = TimeSpan.FromSeconds(fusionCacheOptions.FailSafeThrottleDurationInSeconds),
 
                 // Eager refresh
-                EagerRefreshThreshold = 0.9f,
-
+                EagerRefreshThreshold = fusionCacheOptions.EagerRefreshThreshold,
                 // Factory timeouts
-                FactorySoftTimeout = TimeSpan.FromMilliseconds(100),
-                FactoryHardTimeout = TimeSpan.FromMilliseconds(1500),
+                FactorySoftTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactorySoftTimeoutInMilliseconds),
+                FactoryHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactoryHardTimeoutInMilliseconds),
 
                 // Distributed cache options
-                DistributedCacheSoftTimeout = TimeSpan.FromMinutes(10),
-                DistributedCacheHardTimeout = TimeSpan.FromMinutes(20),
-                AllowBackgroundDistributedCacheOperations = true,
+                DistributedCacheSoftTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheSoftTimeoutInMinutes),
+                DistributedCacheHardTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheHardTimeoutInMinutes),
+                AllowBackgroundDistributedCacheOperations = fusionCacheOptions.AllowBackgroundDistributedCacheOperationsEnabled,
 
                 // Jittering
-                JitterMaxDuration = TimeSpan.FromMinutes(2)
+                JitterMaxDuration = TimeSpan.FromMinutes(fusionCacheOptions.JitterMaxDurationInMinutes)
             })
             // Add FusionCache serialization based on System.Text.Json
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
             // Add Redis distributed cache support
-            .WithDistributedCache(new RedisCache(new RedisCacheOptions() { Configuration = redisConnectionString }))
+            .WithDistributedCache(new RedisCache(new RedisCacheOptions() { Configuration = fusionCacheOptions.RedisCacheConnectionString }))
             // Add the fusion cache backplane for Redis
-            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions() { Configuration = redisConnectionString }));
+            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions() { Configuration = fusionCacheOptions.RedisBackplaneConnectionString }));
+
+        return services;
+    }
 
     /// <summary>
-    /// Configures a FusionCache instance with Redis distributed cache and backplane and enables custom log levels.
+    /// Registers the distributed logs FusionCache services with the specified configuration options.
     /// </summary>
-    /// <param name="services">The Fusion cache builder to configure.</param>
-    /// <param name="redisConnectionString">The connection string used to configure Redis for distributed cache and backplane.</param>
-    /// <returns>The modified <see cref="IFusionCacheBuilder"/> for chaining.</returns>
-    /// <remarks>
-    /// This helper is similar to <see cref="AddFusionDistributedCache"/> but also customizes logging levels for:
-    /// - Fail-safe activation and serialization errors
-    /// - Distributed cache synthetic timeouts and errors
-    /// - Factory synthetic timeouts and errors
-    /// It still configures default entry options, distributed cache settings and adds Redis-based distributed cache and backplane.
-    /// </remarks>
-    public static IFusionCacheBuilder AddFusionDistributedCacheWithLogs(this IFusionCacheBuilder services, string redisConnectionString)
-        => services.AddFusionCache()
+    /// <remarks>This method configures FusionCache with custom cache durations, fail-safe settings, and
+    /// logging levels. It also integrates Redis for distributed caching and backplane support. Use the configuration
+    /// parameter to customize cache behavior and connection settings as needed.</remarks>
+    /// <param name="services">The service collection to which the distributed logs FusionCache services will be added.</param>
+    /// <param name="configuration">An optional action to configure the settings of the distributed logs FusionCache. If not specified, default
+    /// options are used.</param>
+    /// <returns>The updated service collection with the distributed logs FusionCache services registered.</returns>
+    public static IServiceCollection AddDistributedLogsFusionCache(this IServiceCollection services, Action<DistributedLogsFusionCacheOptions>? configuration = null)
+    {
+        var fusionCacheOptions = new DistributedLogsFusionCacheOptions();
+        configuration?.Invoke(fusionCacheOptions);
+
+        services.TryAddSingleton(fusionCacheOptions);
+
+        services.AddFusionCache()
             .WithOptions(options =>
             {
-                options.DistributedCacheCircuitBreakerDuration = TimeSpan.FromMinutes(2);
+                options.DistributedCacheCircuitBreakerDuration = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheCircuitBreakerDurationInMinutes);
 
                 // Custom log levels
-                options.FailSafeActivationLogLevel = LogLevel.Debug;
-                options.SerializationErrorsLogLevel = LogLevel.Warning;
+                options.FailSafeActivationLogLevel = fusionCacheOptions.FailSafeActivationLogLevel;
+                options.SerializationErrorsLogLevel = fusionCacheOptions.SerializationErrorsLogLevel;
 
-                options.DistributedCacheSyntheticTimeoutsLogLevel = LogLevel.Debug;
-                options.DistributedCacheErrorsLogLevel = LogLevel.Error;
+                options.DistributedCacheSyntheticTimeoutsLogLevel = fusionCacheOptions.DistributedCacheSyntheticTimeoutsLogLevel;
+                options.DistributedCacheErrorsLogLevel = fusionCacheOptions.DistributedCacheErrorsLogLevel;
 
-                options.FactorySyntheticTimeoutsLogLevel = LogLevel.Debug;
-                options.FactoryErrorsLogLevel = LogLevel.Error;
+                options.FactorySyntheticTimeoutsLogLevel = fusionCacheOptions.FactorySyntheticTimeoutsLogLevel;
+                options.FactoryErrorsLogLevel = fusionCacheOptions.FactoryErrorsLogLevel;
             })
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
                 // Cache duration
-                Duration = TimeSpan.FromMinutes(10),
+                Duration = TimeSpan.FromMinutes(fusionCacheOptions.CacheDurationInMinutes),
 
                 // Fail-safe options
                 IsFailSafeEnabled = true,
-                FailSafeMaxDuration = TimeSpan.FromHours(2),
-                FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+                FailSafeMaxDuration = TimeSpan.FromHours(fusionCacheOptions.FailSafeMaxDurationInMinutes),
+                FailSafeThrottleDuration = TimeSpan.FromSeconds(fusionCacheOptions.FailSafeThrottleDurationInSeconds),
 
                 // Eager refresh
-                EagerRefreshThreshold = 0.9f,
+                EagerRefreshThreshold = fusionCacheOptions.EagerRefreshThreshold,
 
                 // Factory timeouts
-                FactorySoftTimeout = TimeSpan.FromMilliseconds(100),
-                FactoryHardTimeout = TimeSpan.FromMilliseconds(1500),
+                FactorySoftTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactorySoftTimeoutInMilliseconds),
+                FactoryHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactoryHardTimeoutInMilliseconds),
 
                 // Distributed cache options
-                DistributedCacheSoftTimeout = TimeSpan.FromMinutes(10),
-                DistributedCacheHardTimeout = TimeSpan.FromMinutes(20),
-                AllowBackgroundDistributedCacheOperations = true,
+                DistributedCacheSoftTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheSoftTimeoutInMinutes),
+                DistributedCacheHardTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheHardTimeoutInMinutes),
+                AllowBackgroundDistributedCacheOperations = fusionCacheOptions.AllowBackgroundDistributedCacheOperationsEnabled,
 
                 // Jittering
-                JitterMaxDuration = TimeSpan.FromMinutes(2)
+                JitterMaxDuration = TimeSpan.FromMinutes(fusionCacheOptions.JitterMaxDurationInMinutes)
             })
             // Add FusionCache serialization based on System.Text.Json
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
             // Add Redis distributed cache support
-            .WithDistributedCache(new RedisCache(new RedisCacheOptions() { Configuration = redisConnectionString }))
+            .WithDistributedCache(new RedisCache(new RedisCacheOptions() { Configuration = fusionCacheOptions.RedisCacheConnectionString }))
             // Add the fusion cache backplane for Redis
-            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions() { Configuration = redisConnectionString }));
+            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions() { Configuration = fusionCacheOptions.RedisBackplaneConnectionString }));
+
+        return services;
+    }
 }
