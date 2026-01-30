@@ -8,40 +8,36 @@ using ZiggyCreatures.Caching.Fusion;
 namespace TinyLocalization.Localization;
 
 /// <summary>
-/// An <see cref="IStringLocalizer"/> implementation that reads translations from a database
-/// and uses <see cref="IFusionCache"/> to cache per-culture lookup results.
+/// Provides a string localizer that retrieves localized strings from a database, supporting culture-specific lookups,
+/// parent culture fallback, and caching for efficient localization in .NET applications.
 /// </summary>
-/// <param name="serviceProvider">
-/// The <see cref="IServiceProvider"/> used to create scoped services (for example to resolve
-/// a <see cref="LocalizationDbContext"/> for database queries).
-/// </param>
-/// <param name="resource">
-/// The resource name (logical resource/container) for which this localizer will resolve keys.
-/// This value is normalized to an empty string if null.
-/// </param>
-/// <param name="fusionCache">
-/// The <see cref="IFusionCache"/> instance used to cache translation lookups.
-/// </param>
-/// <param name="options">
-/// The <see cref="DbLocalizationOptions"/> instance controlling caching, fallback and key behavior.
-/// </param>
+/// <remarks>EfStringLocalizer implements IStringLocalizer and is designed for scenarios where localized resources
+/// are stored in a database rather than static files. It supports fallback to parent cultures and a global fallback
+/// culture, and leverages caching to optimize repeated lookups. The localizer is intended for use in ASP.NET Core and
+/// other .NET applications requiring dynamic, database-driven localization.</remarks>
+/// <param name="serviceProvider">The service provider used to resolve dependencies and create scopes for database access during localization
+/// operations.</param>
+/// <param name="resource">The name of the resource for which localized strings are managed. This typically corresponds to a logical grouping
+/// or source of localized values.</param>
+/// <param name="fusionCache">The cache instance used to store and retrieve localized strings, reducing database queries and improving
+/// performance.</param>
+/// <param name="options">The localization options that configure fallback behavior, cache settings, and other localization features.</param>
 public class EfStringLocalizer(IServiceProvider serviceProvider, string resource, IFusionCache fusionCache, DbLocalizationOptions options) : IStringLocalizer
 {
     /// <summary>
-    /// Normalized resource name for lookups (never null).
+    /// Stores the resource string, defaulting to an empty string if the provided value is null.
     /// </summary>
     private readonly string resource = resource ?? string.Empty;
 
     /// <summary>
-    /// Query the database directly (no caching) for the given resource key and culture.
+    /// Retrieves the localized string value from the database for the specified resource key and culture without using
+    /// a cache.
     /// </summary>
-    /// <param name="name">The translation key to look up.</param>
-    /// <param name="cultureName">
-    /// The culture name to query for. Use an empty string to indicate the invariant culture.
-    /// </param>
-    /// <returns>
-    /// The translation value if found; otherwise <c>null</c> if no entry exists for the specified key and culture.
-    /// </returns>
+    /// <remarks>This method does not cache the retrieved value, meaning each call results in a database
+    /// query.</remarks>
+    /// <param name="name">The key of the resource for which the localized string is requested. This parameter cannot be null.</param>
+    /// <param name="cultureName">The culture name that specifies the localization context. This parameter cannot be null.</param>
+    /// <returns>The localized string value associated with the specified key and culture, or null if no matching entry is found.</returns>
     private string? GetStringFromDb_NoCache(string name, string cultureName)
     {
         using var scope = serviceProvider.CreateScope();
@@ -53,15 +49,16 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
     }
 
     /// <summary>
-    /// Attempt to resolve the specified key using a culture fallback chain and per-culture caching.
-    /// The chain tries the current UI culture, optional parent cultures (if enabled by options),
-    /// an optional global fallback culture, and finally the invariant culture.
-    /// Each culture lookup is cached individually using <see cref="IFusionCache.GetOrSet{T}"/>.
+    /// Retrieves a localized string for the specified resource name, attempting to resolve it through the current UI
+    /// culture and configured fallback cultures.
     /// </summary>
-    /// <param name="name">The translation key to resolve.</param>
-    /// <returns>
-    /// The first non-<c>null</c> translation value found along the fallback chain; otherwise <c>null</c>.
-    /// </returns>
+    /// <remarks>The method first attempts to find the resource string in the current UI culture. If not
+    /// found, it falls back to parent cultures, a global fallback culture if configured, and finally the invariant
+    /// culture. Each lookup is cached per culture to improve performance. The method does not throw if the resource is
+    /// not found; instead, it returns null.</remarks>
+    /// <param name="name">The name of the resource string to retrieve. Cannot be null.</param>
+    /// <returns>The localized string associated with the specified name, or null if the string is not found in any of the
+    /// attempted cultures.</returns>
     private string? GetStringWithFallback(string name)
     {
         // Determine culture chain to try
@@ -125,12 +122,19 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
     }
 
     /// <summary>
-    /// Build a normalized cache key for the given resource, key and culture.
+    /// Generates a cache key that uniquely identifies a localized resource entry based on the specified resource, name,
+    /// and culture information.
     /// </summary>
-    /// <param name="resource">The resource name used for grouping translations.</param>
-    /// <param name="name">The translation key.</param>
-    /// <param name="cultureName">The culture name (empty string for invariant culture).</param>
-    /// <returns>A string cache key composed of the configured cache prefix and provided segments.</returns>
+    /// <remarks>If <paramref name="cultureName"/> is an empty string, an underscore ("_") is used in the
+    /// cache key to represent the invariant culture. This ensures that cache keys are consistently formatted and avoids
+    /// empty segments.</remarks>
+    /// <param name="resource">The identifier of the resource for which the cache key is being created. This typically represents the resource
+    /// set or source.</param>
+    /// <param name="name">The name of the specific resource entry to include in the cache key.</param>
+    /// <param name="cultureName">The culture name used to distinguish localized entries. If an empty string is provided, the invariant culture is
+    /// assumed.</param>
+    /// <returns>A formatted string that serves as the cache key, incorporating the cache key prefix, resource, name, and culture
+    /// segment.</returns>
     private string BuildCacheKey(string resource, string name, string cultureName)
     {
         // Use prefix so cache keys are grouped and easier to remove
@@ -141,16 +145,14 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
     }
 
     /// <summary>
-    /// Gets the localized string for the specified key using the configured fallback strategy.
-    /// If a translation is found, returns a <see cref="LocalizedString"/> with <see cref="LocalizedString.ResourceNotFound"/>
-    /// set to <c>false</c>. If not found, behavior depends on <see cref="DbLocalizationOptions.ReturnKeyIfNotFound"/>.
+    /// Gets the localized string associated with the specified name, returning a fallback value if the resource is not
+    /// found.
     /// </summary>
-    /// <param name="name">The translation key to lookup.</param>
-    /// <returns>
-    /// A <see cref="LocalizedString"/> with the resolved or fallback value. If the key was not found and
-    /// <see cref="DbLocalizationOptions.ReturnKeyIfNotFound"/> is <c>true</c>, the key is returned as the value
-    /// and <see cref="LocalizedString.ResourceNotFound"/> will be <c>true</c>.
-    /// </returns>
+    /// <remarks>If the requested string is not found and the option to return the key is enabled, the key
+    /// will be returned as the value. Otherwise, an empty string is returned.</remarks>
+    /// <param name="name">The name of the string to retrieve from the localization resources.</param>
+    /// <returns>A <see cref="LocalizedString"/> object containing the localized value. If the resource is not found, the
+    /// returned object contains either the key itself or an empty string, depending on configuration.</returns>
     public LocalizedString this[string name]
     {
         get
@@ -172,15 +174,15 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
     }
 
     /// <summary>
-    /// Gets the localized and formatted string for the specified key, formatting it with the provided arguments.
+    /// Gets the localized string associated with the specified key, formatted with the provided arguments.
     /// </summary>
-    /// <param name="name">The translation key to lookup.</param>
-    /// <param name="arguments">Format arguments used with <see cref="string.Format(string, object[])"/> against the found format.</param>
-    /// <returns>
-    /// A <see cref="LocalizedString"/> containing the formatted value. If the format is not found and
-    /// <see cref="DbLocalizationOptions.ReturnKeyIfNotFound"/> is <c>true</c>, the <paramref name="name"/> is used
-    /// as the format; otherwise an empty string is used.
-    /// </returns>
+    /// <remarks>If the specified key is not found and the option to return the key is disabled, an empty
+    /// string is returned. The method uses a fallback mechanism to attempt to retrieve the string.</remarks>
+    /// <param name="name">The key that identifies the localized string to retrieve.</param>
+    /// <param name="arguments">An array of objects to format the localized string with. Each object is used to replace a corresponding
+    /// placeholder in the localized string.</param>
+    /// <returns>A LocalizedString object containing the key, the formatted localized value, and a flag indicating whether the
+    /// string was found.</returns>
     public LocalizedString this[string name, params object[] arguments]
     {
         get
@@ -194,18 +196,16 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
     }
 
     /// <summary>
-    /// Returns all localized strings for the current UI culture and optionally parent cultures.
-    /// Results are aggregated in order of culture priority (current culture first), and the first
-    /// occurrence of a key takes precedence.
+    /// Retrieves all localized strings for the current user interface culture, with an option to include strings from
+    /// parent cultures and a global fallback culture if configured.
     /// </summary>
-    /// <param name="includeParentCultures">
-    /// When <c>true</c>, and when <see cref="DbLocalizationOptions.FallbackToParentCultures"/> is enabled,
-    /// parent cultures are also queried (from nearest to farthest parent).
-    /// </param>
-    /// <returns>
-    /// An enumerable of <see cref="LocalizedString"/> instances representing all resolved keys for the
-    /// requested cultures (duplicates removed in favor of higher priority cultures).
-    /// </returns>
+    /// <remarks>If includeParentCultures is set to true and fallback to parent cultures is enabled, the
+    /// method searches through the hierarchy of parent cultures in order of specificity. If a global fallback culture
+    /// is configured and not already included, it is also searched. The returned collection contains only the first
+    /// occurrence of each key, prioritizing more specific cultures.</remarks>
+    /// <param name="includeParentCultures">true to include localized strings from parent cultures in addition to the current culture; otherwise, false.</param>
+    /// <returns>A collection of LocalizedString objects representing the localized strings available for the specified cultures.
+    /// Each key appears only once, with values from the highest-priority culture.</returns>
     public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures)
     {
         // For GetAllStrings we'll try current culture and, if requested, parents
@@ -253,13 +253,14 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
     }
 
     /// <summary>
-    /// Returns an <see cref="IStringLocalizer"/> scoped to the provided culture. This implementation
-    /// relies on <see cref="CultureInfo.CurrentUICulture"/> for lookups and therefore simply returns
-    /// the current instance. Callers who want culture-scoped behavior should set <see cref="CultureInfo.CurrentUICulture"/>
-    /// before calling into this localizer.
+    /// Returns a localizer instance that uses the specified culture for resource lookups.
     /// </summary>
-    /// <param name="culture">The culture to scope to (not used by this implementation).</param>
-    /// <returns>This instance (<c>this</c>).</returns>
+    /// <remarks>This method does not create a new localizer or clone localization options. Instead, it relies
+    /// on the caller to set CultureInfo.CurrentUICulture to the desired culture before performing resource lookups.
+    /// Ensure that CurrentUICulture is set appropriately to reflect the intended culture.</remarks>
+    /// <param name="culture">The culture to use for localizing resources. This parameter determines the language and regional formatting
+    /// applied to localized strings.</param>
+    /// <returns>An instance of IStringLocalizer configured to use the specified culture for resource lookups.</returns>
     public IStringLocalizer WithCulture(CultureInfo culture) =>
         // We rely on CultureInfo.CurrentUICulture; to honor WithCulture we could clone options,
         // but for simplicity return this (callers can set CurrentUICulture externally).

@@ -5,28 +5,27 @@ using ZiggyCreatures.Caching.Fusion;
 namespace TinyLocalization.Localization;
 
 /// <summary>
-/// Factory responsible for creating <see cref="EfStringLocalizer"/> instances.
+/// Provides a factory for creating instances of <see cref="IStringLocalizer"/> that retrieve localized strings from a
+/// database using Entity Framework, supporting resource-based and location-based localization strategies.
 /// </summary>
-/// <remarks>
-/// This factory captures an <see cref="IServiceProvider"/>, an <see cref="IFusionCache"/>,
-/// and <see cref="DbLocalizationOptions"/> and uses them to create localized string providers
-/// bound to a specific resource key.
-/// </remarks>
-/// <param name="serviceProvider">The application's service provider used to resolve services when creating localizers.</param>
-/// <param name="fusionCache">A shared <see cref="IFusionCache"/> instance used by created localizers for caching.</param>
-/// <param name="options">Database localization options used to configure behavior of created localizers.</param>
+/// <remarks>This factory enables flexible localization by allowing the creation of localizers based on resource
+/// types or explicit resource keys. It supports caching and custom configuration to optimize performance and adapt to
+/// various localization scenarios.</remarks>
+/// <param name="serviceProvider">The <see cref="IServiceProvider"/> used to resolve dependencies required for localization services.</param>
+/// <param name="fusionCache">The <see cref="IFusionCache"/> instance used to cache localized strings and improve lookup performance.</param>
+/// <param name="options">The <see cref="DbLocalizationOptions"/> that configure the behavior and settings of the localization services.</param>
 public class EfStringLocalizerFactory(IServiceProvider serviceProvider, IFusionCache fusionCache, DbLocalizationOptions options) : IStringLocalizerFactory
 {
     /// <summary>
-    /// Creates an <see cref="IStringLocalizer"/> for the specified resource source type.
+    /// Creates a new instance of an <see cref="IStringLocalizer"/> that provides localized strings for the specified
+    /// resource source type.
     /// </summary>
-    /// <param name="resourceSource">
-    /// The type that identifies the resource. The factory uses <see cref="Type.FullName"/> if available,
-    /// otherwise <see cref="Type.Name"/> to form the resource key.
-    /// </param>
-    /// <returns>
-    /// A new <see cref="EfStringLocalizer"/> instance scoped to the resource identified by <paramref name="resourceSource"/>.
-    /// </returns>
+    /// <remarks>The resource name is derived from the full name of the <paramref name="resourceSource"/>
+    /// type. If the full name is not available, the type's name is used instead.</remarks>
+    /// <param name="resourceSource">The type that serves as the source for localization resources. This type is used to determine the resource name
+    /// for localization.</param>
+    /// <returns>An <see cref="IStringLocalizer"/> instance that can be used to retrieve localized strings based on the specified
+    /// resource source type.</returns>
     public IStringLocalizer Create(Type resourceSource)
     {
         var resource = resourceSource.FullName ?? resourceSource.Name;
@@ -34,18 +33,16 @@ public class EfStringLocalizerFactory(IServiceProvider serviceProvider, IFusionC
     }
 
     /// <summary>
-    /// Creates an <see cref="IStringLocalizer"/> for the specified base name and location.
+    /// Creates a new instance of an <see cref="IStringLocalizer"/> for the specified resource base name and location.
     /// </summary>
-    /// <param name="baseName">
-    /// The base name of the resource (for example, a shared resource name).
-    /// </param>
-    /// <param name="location">
-    /// The location (typically the assembly or namespace) of the resource. If <see cref="string.Empty"/> or <c>null</c>,
-    /// the <paramref name="baseName"/> is used as the resource key; otherwise <c>&lt;location&gt;.&lt;baseName&gt;</c> is used.
-    /// </param>
-    /// <returns>
-    /// A new <see cref="EfStringLocalizer"/> instance scoped to the composed resource key.
-    /// </returns>
+    /// <remarks>The resource key is constructed by combining the location and base name, separated by a dot,
+    /// if the location is provided. This enables organized management of resources across different
+    /// locations.</remarks>
+    /// <param name="baseName">The base name of the resource to localize. Typically represents a specific resource set, such as a class or
+    /// shared resource group. Cannot be null or empty.</param>
+    /// <param name="location">The location of the resource, used to further qualify the resource key. If null or empty, only the base name is
+    /// used.</param>
+    /// <returns>An <see cref="IStringLocalizer"/> instance that retrieves localized strings based on the specified resource key.</returns>
     public IStringLocalizer Create(string baseName, string location)
     {
         // baseName could be e.g. "Shared", we'll combine baseName/location to form a resource key
