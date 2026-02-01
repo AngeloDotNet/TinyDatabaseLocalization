@@ -20,7 +20,6 @@ jobs:
   build:
     name: Publish on NuGet
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == vars.REPOSITORY_OWNER }}
 
     steps:
     - name: Checkout
@@ -66,10 +65,10 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-          #tag_name: ${{ env.TAG_NAME }}_v${{ steps.nbgv.outputs.NuGetPackageVersion }}
-          tag_name: v${{ steps.nbgv.outputs.NuGetPackageVersion }}
-          #release_name: ${{ env.RELEASE_NAME }} ${{ steps.nbgv.outputs.NuGetPackageVersion }}
-          name: ${{ env.RELEASE_NAME }} ${{ steps.nbgv.outputs.NuGetPackageVersion }}
-          body: TinyLocalization - A lightweight localization library for .NET applications
-          draft: false
-          prerelease: false
+        #tag_name: ${{ env.TAG_NAME }}_v${{ steps.nbgv.outputs.NuGetPackageVersion }}
+        tag_name: v${{ steps.nbgv.outputs.NuGetPackageVersion }}
+        #release_name: ${{ env.RELEASE_NAME }} ${{ steps.nbgv.outputs.NuGetPackageVersion }}
+        name: ${{ env.RELEASE_NAME }} ${{ steps.nbgv.outputs.NuGetPackageVersion }}
+        body: TinyLocalization - A lightweight localization library for .NET applications
+        draft: false
+        prerelease: false
