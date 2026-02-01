@@ -10,10 +10,17 @@ This library provides a simple and efficient way to manage localization in .NET 
 
 ### Prerequisites
 
-- .NET 8.0 SDK (latest version)
-- Entity Framework Core 8.0
+- Entity Framework Core 
 - Redis server (for caching, optional but recommended)
-- Database SQLite
+
+### Supported .NET Versions
+
+- .NET 8.0
+
+### Supported Databases
+
+- SQLite
+- SQL Server
 
 ## 📜 License
 
@@ -32,8 +39,12 @@ The project is constantly evolving. Contributions are always welcome. Feel free 
 3. Make your changes
 4. Submit a pull requests (targeting develop)
 
-## 🆘 Support
+## 👏 Special Thanks
 
-If you find this project helpful, consider buying me a coffee!
+- @jodydonetti
 
-<a href="https://www.buymeacoffee.com/angelodotnet" target="_blank"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00.svg?style=for-the-badge&logo=Buy-Me-A-Coffee&logoColor=black"></a>
+<!-- A big thank you to all the contributors who have helped improve this project! -->
+
+## ☕ Buy Me a Coffee
+
+If you find this project helpful, consider [buying me a coffee](https://www.buymeacoffee.com/angelodotnet)!
