@@ -4,12 +4,16 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
         <Authors>Angelo Pirola</Authors>
+        <Company>Angelo Pirola</Company>
         <Product>TinyLocalization</Product>
         <Title>TinyLocalization</Title>
         <Description>A lightweight library to support localization from a database in .NET applications.</Description>
         <PackageId>TinyLocalization</PackageId>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/AngeloDotNet/TinyDatabaseLocalization</PackageProjectUrl>
+        <PackageIcon>LibraryTools.png</PackageIcon>
         <PackageTags>localization; database; efcore; sqlite; redis; caching; fusioncache</PackageTags>
         <RepositoryType>git</RepositoryType>
         <RepositoryBranch>main</RepositoryBranch>
