@@ -131,8 +131,12 @@ public static class ServiceCollectionExtensions
                     throw new ArgumentOutOfRangeException(nameof(databaseContextOptions.DatabaseType), "Unsupported database type");
             }
 
-            // common configuration
-            //builder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking); // optional: disable tracking for read-only scenarios
+            // optionally enable tracking for read-only scenarios (disabled by default)
+            if (!databaseContextOptions.EnableUseQueryTrackingBehavior)
+            {
+                //builder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+                builder.UseQueryTrackingBehavior(databaseContextOptions.QueryTrackingBehavior);
+            }
 
             // Log only command executed events (pass array of event ids)
             builder.LogTo(Console.WriteLine, [RelationalEventId.CommandExecuted]);
