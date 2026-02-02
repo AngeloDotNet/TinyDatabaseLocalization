@@ -16,6 +16,7 @@ This library provides a simple and efficient way to manage localization in .NET 
 ### Supported .NET Versions
 
 - .NET 8.0
+- .NET 9.0
 
 ### Supported Databases
 
