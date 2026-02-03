@@ -127,6 +127,16 @@ public static class ServiceCollectionExtensions
                     });
                     break;
 
+                case DatabaseType.PostgreSQL:
+                    builder.UseNpgsql(databaseContextOptions.ConnectionString, sql =>
+                    {
+                        sql.MigrationsAssembly(migrationsAssembly);
+                        sql.MigrationsHistoryTable(databaseContextOptions.MigrationsHistoryTable);
+
+                        sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                    });
+                    break;
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(databaseContextOptions.DatabaseType), "Unsupported database type");
             }
