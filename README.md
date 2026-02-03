@@ -22,6 +22,7 @@ This library provides a simple and efficient way to manage localization in .NET 
 
 - SQLite
 - SQL Server
+- PostgreSQL
 
 ## 📜 License
 
