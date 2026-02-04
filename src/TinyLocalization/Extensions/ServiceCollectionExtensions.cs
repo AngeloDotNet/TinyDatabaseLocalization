@@ -4,7 +4,6 @@ using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Localization;
-using TinyLocalization.Data;
 using TinyLocalization.Enums;
 using TinyLocalization.Localization;
 using TinyLocalization.Options;
@@ -67,21 +66,21 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Configures and registers a localization database context of the specified type with provider-specific options in
-    /// the dependency injection container.
+    /// Registers the localization database context and its configuration options with the dependency injection
+    /// container, enabling support for multiple database providers.
     /// </summary>
-    /// <remarks>This method enables localization support by configuring the specified DbContext with the
-    /// appropriate database provider and options. It supports SQLite and SQL Server providers, and applies additional
-    /// configuration such as migrations assembly, query splitting behavior, and logging options based on the provided
-    /// DatabaseContextOptions.</remarks>
-    /// <typeparam name="TContext">The type of the DbContext to configure for localization. Must inherit from DbContext.</typeparam>
-    /// <param name="services">The IServiceCollection to which the localization DbContext and related services will be added.</param>
-    /// <param name="configuration">An optional delegate to configure the database context options, such as database type, connection string, and
-    /// provider-specific settings.</param>
-    /// <returns>The IServiceCollection instance with the localization DbContext configured for further chaining.</returns>
-    /// <exception cref="ArgumentException">Thrown if the database type is set to 'None' or if the connection string is null, empty, or consists only of
-    /// white-space characters.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown if the specified database type is not supported by the method.</exception>
+    /// <remarks>This method supports multiple database providers, including SQLite, SQL Server, PostgreSQL,
+    /// and MySQL. Provider-specific options and behaviors can be configured through the DatabaseContextOptions
+    /// parameter. Ensure that the connection string and database type are correctly specified to avoid runtime
+    /// exceptions.</remarks>
+    /// <typeparam name="TContext">The type of the database context to use for localization. Must inherit from DbContext.</typeparam>
+    /// <param name="services">The service collection to which the localization database context and its configuration will be added.</param>
+    /// <param name="configuration">An optional action to configure database context options, such as the database provider, connection string, and
+    /// additional settings.</param>
+    /// <returns>The service collection with the localization database context and its configuration registered.</returns>
+    /// <exception cref="ArgumentException">Thrown if the database type is set to 'None' or if the connection string is null or empty when configuring the
+    /// localization database context.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if an unsupported database type is specified in the database context options.</exception>
     public static IServiceCollection AddLocalizationDbContext<TContext>(this IServiceCollection services, Action<DatabaseContextOptions>? configuration = null) where TContext : DbContext
     {
         var databaseContextOptions = new DatabaseContextOptions();
@@ -101,7 +100,8 @@ public static class ServiceCollectionExtensions
 
         var migrationsAssembly = databaseContextOptions.MigrationsAssembly ?? typeof(TContext).Assembly.FullName;
 
-        services.AddDbContext<LocalizationDbContext>(builder =>
+        //services.AddDbContext<LocalizationDbContext>(builder =>
+        services.AddDbContext<TContext>(builder =>
         {
             // provider-specific configuration
             switch (databaseContextOptions.DatabaseType)
@@ -129,6 +129,18 @@ public static class ServiceCollectionExtensions
 
                 case DatabaseType.PostgreSQL:
                     builder.UseNpgsql(databaseContextOptions.ConnectionString, sql =>
+                    {
+                        sql.MigrationsAssembly(migrationsAssembly);
+                        sql.MigrationsHistoryTable(databaseContextOptions.MigrationsHistoryTable);
+
+                        sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                    });
+                    break;
+
+                case DatabaseType.MySQL:
+                    var mySQLConnection = databaseContextOptions.ConnectionString;
+
+                    builder.UseMySql(mySQLConnection, ServerVersion.AutoDetect(mySQLConnection), sql =>
                     {
                         sql.MigrationsAssembly(migrationsAssembly);
                         sql.MigrationsHistoryTable(databaseContextOptions.MigrationsHistoryTable);
