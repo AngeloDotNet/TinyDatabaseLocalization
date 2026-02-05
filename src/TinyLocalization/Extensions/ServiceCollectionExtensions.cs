@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services"></param>
     /// <returns></returns>
+    [Obsolete("Use AddDbLocalization with DbLocalizationOptions configuration overload instead.")]
     public static IServiceCollection AddDbLocalization(this IServiceCollection services)
     {
         services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>();
