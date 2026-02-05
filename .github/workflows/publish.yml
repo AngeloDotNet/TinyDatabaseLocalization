@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  NET_VERSION: '9.x'
+  NET_VERSION: '10.x'
   PROJECT_NAME: src/TinyLocalization
   PROJECT_FILE: TinyLocalization.csproj
   RELEASE_NAME: TinyLocalization
