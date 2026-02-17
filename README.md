@@ -46,8 +46,9 @@ The project is constantly evolving. Contributions are always welcome. Feel free 
 
 - @jodydonetti
 
-<!-- A big thank you to all the contributors who have helped improve this project! -->
+<!-- A big thank you to all the contributors who have helped improve this project!
 
 ## ☕ Buy Me a Coffee
 
 If you find this project helpful, consider [buying me a coffee](https://www.buymeacoffee.com/angelodotnet)!
+-->

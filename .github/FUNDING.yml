@@ -1,0 +1,17 @@
+# Funding configuration
+        # Learn more: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+        # GitHub Sponsors username
+        #github: [your-username]
+
+        # Other funding platforms (uncomment and configure as needed)
+        # patreon: your-patreon-username
+        # open_collective: your-opencollective-username
+        # ko_fi: your-ko-fi-username
+         buy_me_a_coffee: angelodotnet
+        # liberapay: your-liberapay-username
+        # issuehunt: your-issuehunt-username
+        # community_bridge: your-project-slug
+        # polar: your-polar-username
+        # custom: ["https://your-custom-link.com"]
+        
