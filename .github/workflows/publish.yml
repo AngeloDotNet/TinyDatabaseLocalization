@@ -40,7 +40,7 @@ jobs:
     #  run: dotnet test
 
     - name: Nerdbank.GitVersioning 
-      uses: dotnet/nbgv@v0.4
+      uses: dotnet/nbgv@v0.5
       id: nbgv
       with:        
         path: ${{ env.PROJECT_NAME }}
