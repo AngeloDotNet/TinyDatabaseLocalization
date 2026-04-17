@@ -1,14 +1,14 @@
+using TinyLocalization.Entities.Interfaces;
+
 namespace TinyLocalization.Entities;
 
 /// <summary>
-/// Represents a single localized translation entry.
+/// Represents a localized translation entry for a specific resource, key, and culture.
 /// </summary>
-/// <remarks>
-/// A <see cref="Translation"/> identifies a translated string by the combination of
-/// resource name, key and culture. Instances are typically stored in a localization
-/// database or other persistence store.
-/// </remarks>
-public class Translation
+/// <remarks>A Translation instance associates a resource name, a key, and a culture with a translated string
+/// value. This class is typically used in localization scenarios to provide language-specific text for application
+/// resources.</remarks>
+public class Translation : IEntity<int>
 {
     /// <summary>
     /// Gets or sets the primary key identifier for this translation entry.
