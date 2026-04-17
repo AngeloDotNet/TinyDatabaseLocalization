@@ -235,9 +235,7 @@ public class EfStringLocalizer(IServiceProvider serviceProvider, string resource
 
         foreach (var culture in cultures)
         {
-            var list = db.Translations
-                .Where(t => t.Resource == resource && t.Culture == culture)
-                .AsEnumerable();
+            var list = db.Translations.Where(t => t.Resource == resource && t.Culture == culture).AsEnumerable();
 
             foreach (var t in list)
             {
