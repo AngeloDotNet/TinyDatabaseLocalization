@@ -82,7 +82,8 @@ public static class ServiceCollectionExtensions
     /// <exception cref="ArgumentException">Thrown if the database type is set to 'None' or if the connection string is null or empty when configuring the
     /// localization database context.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if an unsupported database type is specified in the database context options.</exception>
-    public static IServiceCollection AddLocalizationDbContext<TContext>(this IServiceCollection services, Action<DatabaseContextOptions>? configuration = null) where TContext : DbContext
+    public static IServiceCollection AddLocalizationDbContext<TContext>(this IServiceCollection services, Action<DatabaseContextOptions>? configuration = null)
+        where TContext : DbContext
     {
         var databaseContextOptions = new DatabaseContextOptions();
         configuration?.Invoke(databaseContextOptions);
@@ -101,10 +102,8 @@ public static class ServiceCollectionExtensions
 
         var migrationsAssembly = databaseContextOptions.MigrationsAssembly ?? typeof(TContext).Assembly.FullName;
 
-        //services.AddDbContext<LocalizationDbContext>(builder =>
         services.AddDbContext<TContext>(builder =>
         {
-            // provider-specific configuration
             switch (databaseContextOptions.DatabaseType)
             {
                 case DatabaseType.SQLite:
@@ -282,10 +281,18 @@ public static class ServiceCollectionExtensions
             })
             // Add FusionCache serialization based on System.Text.Json
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
+
             // Add Redis distributed cache support
-            .WithDistributedCache(new RedisCache(new RedisCacheOptions() { Configuration = fusionCacheOptions.RedisCacheConnectionString }))
+            .WithDistributedCache(new RedisCache(new RedisCacheOptions()
+            {
+                Configuration = fusionCacheOptions.RedisCacheConnectionString
+            }))
+
             // Add the fusion cache backplane for Redis
-            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions() { Configuration = fusionCacheOptions.RedisBackplaneConnectionString }));
+            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions()
+            {
+                Configuration = fusionCacheOptions.RedisBackplaneConnectionString
+            }));
 
         return services;
     }
@@ -349,10 +356,18 @@ public static class ServiceCollectionExtensions
             })
             // Add FusionCache serialization based on System.Text.Json
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
+
             // Add Redis distributed cache support
-            .WithDistributedCache(new RedisCache(new RedisCacheOptions() { Configuration = fusionCacheOptions.RedisCacheConnectionString }))
+            .WithDistributedCache(new RedisCache(new RedisCacheOptions()
+            {
+                Configuration = fusionCacheOptions.RedisCacheConnectionString
+            }))
+
             // Add the fusion cache backplane for Redis
-            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions() { Configuration = fusionCacheOptions.RedisBackplaneConnectionString }));
+            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions()
+            {
+                Configuration = fusionCacheOptions.RedisBackplaneConnectionString
+            }));
 
         return services;
     }
