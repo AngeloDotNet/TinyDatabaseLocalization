@@ -23,9 +23,9 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Adds database-backed localization services to the service collection.
     /// </summary>
-    /// <param name="services"></param>
-    /// <returns></returns>
-    [Obsolete("Use AddDbLocalization with DbLocalizationOptions configuration overload instead.")]
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    [Obsolete("Use AddDatabaseLocalization with DbLocalizationOptions configuration overload instead.", true)]
     public static IServiceCollection AddDbLocalization(this IServiceCollection services)
     {
         services.AddSingleton<IStringLocalizerFactory, EfStringLocalizerFactory>();
@@ -45,7 +45,7 @@ public static class ServiceCollectionExtensions
     /// <param name="services">The service collection to which the localization services will be added. Cannot be null.</param>
     /// <param name="configuration">An optional delegate to configure the <see cref="DbLocalizationOptions"/> instance used for localization.</param>
     /// <returns>The same <see cref="IServiceCollection"/> instance so that additional calls can be chained.</returns>
-    public static IServiceCollection AddDbLocalization(this IServiceCollection services, Action<DbLocalizationOptions>? configuration = null)
+    public static IServiceCollection AddDatabaseLocalization(this IServiceCollection services, Action<DbLocalizationOptions>? configuration = null)
     {
         var dbLocalizationOptions = new DbLocalizationOptions();
         configuration?.Invoke(dbLocalizationOptions);
