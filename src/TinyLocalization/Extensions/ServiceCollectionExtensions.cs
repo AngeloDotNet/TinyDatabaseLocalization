@@ -82,8 +82,7 @@ public static class ServiceCollectionExtensions
     /// <exception cref="ArgumentException">Thrown if the database type is set to 'None' or if the connection string is null or empty when configuring the
     /// localization database context.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if an unsupported database type is specified in the database context options.</exception>
-    public static IServiceCollection AddLocalizationDbContext<TContext>(this IServiceCollection services, Action<DatabaseContextOptions>? configuration = null)
-        where TContext : DbContext
+    public static IServiceCollection AddLocalizationDbContext<TContext>(this IServiceCollection services, Action<DatabaseContextOptions>? configuration = null) where TContext : DbContext
     {
         var databaseContextOptions = new DatabaseContextOptions();
         configuration?.Invoke(databaseContextOptions);
