@@ -416,4 +416,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
-.aider*
+
+# Excluding custom files
+*.patch
