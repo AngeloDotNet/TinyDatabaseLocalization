@@ -64,6 +64,13 @@ public class DatabaseContextOptions
     public bool EnableUseQueryTrackingBehavior { get; set; } = false;
 
     /// <summary>
+    /// Gets or sets a value indicating whether every executed SQL command is written to the console.
+    /// </summary>
+    /// <remarks>The default value is <see langword="false"/>. Console output is meant for local debugging: in
+    /// production rely on the Microsoft.Extensions.Logging integration of Entity Framework Core instead.</remarks>
+    public bool LogCommandsToConsole { get; set; } = false;
+
+    /// <summary>
     /// Gets or sets the behavior used by the context to track changes to entities retrieved from the database.
     /// </summary>
     /// <remarks>Setting this property to <see cref="QueryTrackingBehavior.NoTracking"/> can improve

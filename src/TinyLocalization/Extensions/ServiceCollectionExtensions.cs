@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Localization;
+using TinyLocalization.Data;
 using TinyLocalization.Enums;
 using TinyLocalization.Localization;
 using TinyLocalization.Options;
@@ -99,7 +100,17 @@ public static class ServiceCollectionExtensions
             throw new ArgumentException("Connection string must be provided when configuring LocalizationDbContext.");
         }
 
-        var migrationsAssembly = databaseContextOptions.MigrationsAssembly ?? typeof(TContext).Assembly.FullName;
+        // MigrationsAssembly defaults to an empty string (not null), so a null-coalescing check would never fall back
+        var migrationsAssembly = string.IsNullOrWhiteSpace(databaseContextOptions.MigrationsAssembly)
+            ? typeof(TContext).Assembly.FullName
+            : databaseContextOptions.MigrationsAssembly;
+
+        // The localizer and the manager resolve LocalizationDbContext: when a derived context is registered,
+        // forward LocalizationDbContext to it so that those lookups succeed
+        if (typeof(TContext) != typeof(LocalizationDbContext) && typeof(LocalizationDbContext).IsAssignableFrom(typeof(TContext)))
+        {
+            services.TryAddScoped(sp => (LocalizationDbContext)(DbContext)sp.GetRequiredService<TContext>());
+        }
 
         services.AddDbContext<TContext>(builder =>
         {
@@ -152,15 +163,18 @@ public static class ServiceCollectionExtensions
                     throw new ArgumentOutOfRangeException(nameof(databaseContextOptions.DatabaseType), "Unsupported database type");
             }
 
-            // optionally enable tracking for read-only scenarios (disabled by default)
-            if (!databaseContextOptions.EnableUseQueryTrackingBehavior)
-            {
-                //builder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-                builder.UseQueryTrackingBehavior(databaseContextOptions.QueryTrackingBehavior);
-            }
+            // EnableUseQueryTrackingBehavior = true keeps full tracking (EF Core default), otherwise the configured
+            // QueryTrackingBehavior is applied (NoTracking by default)
+            builder.UseQueryTrackingBehavior(databaseContextOptions.EnableUseQueryTrackingBehavior
+                ? QueryTrackingBehavior.TrackAll
+                : databaseContextOptions.QueryTrackingBehavior);
 
-            // Log only command executed events (pass array of event ids)
-            builder.LogTo(Console.WriteLine, [RelationalEventId.CommandExecuted]);
+            // Writing every executed SQL command to the console is opt-in: EF Core already logs commands through
+            // Microsoft.Extensions.Logging
+            if (databaseContextOptions.LogCommandsToConsole)
+            {
+                builder.LogTo(Console.WriteLine, [RelationalEventId.CommandExecuted]);
+            }
 
             // enable sensitive logging only if explicitly requested
             if (databaseContextOptions.EnableSensitiveDataLogging)
@@ -271,8 +285,8 @@ public static class ServiceCollectionExtensions
                 FactoryHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactoryHardTimeoutInMilliseconds),
 
                 // Distributed cache options
-                DistributedCacheSoftTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheSoftTimeoutInMinutes),
-                DistributedCacheHardTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheHardTimeoutInMinutes),
+                DistributedCacheSoftTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.DistributedCacheSoftTimeoutInMilliseconds),
+                DistributedCacheHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.DistributedCacheHardTimeoutInMilliseconds),
                 AllowBackgroundDistributedCacheOperations = fusionCacheOptions.AllowBackgroundDistributedCacheOperationsEnabled,
 
                 // Jittering
@@ -335,7 +349,7 @@ public static class ServiceCollectionExtensions
 
                 // Fail-safe options
                 IsFailSafeEnabled = true,
-                FailSafeMaxDuration = TimeSpan.FromHours(fusionCacheOptions.FailSafeMaxDurationInMinutes),
+                FailSafeMaxDuration = TimeSpan.FromMinutes(fusionCacheOptions.FailSafeMaxDurationInMinutes),
                 FailSafeThrottleDuration = TimeSpan.FromSeconds(fusionCacheOptions.FailSafeThrottleDurationInSeconds),
 
                 // Eager refresh
@@ -346,8 +360,8 @@ public static class ServiceCollectionExtensions
                 FactoryHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.FactoryHardTimeoutInMilliseconds),
 
                 // Distributed cache options
-                DistributedCacheSoftTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheSoftTimeoutInMinutes),
-                DistributedCacheHardTimeout = TimeSpan.FromMinutes(fusionCacheOptions.DistributedCacheHardTimeoutInMinutes),
+                DistributedCacheSoftTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.DistributedCacheSoftTimeoutInMilliseconds),
+                DistributedCacheHardTimeout = TimeSpan.FromMilliseconds(fusionCacheOptions.DistributedCacheHardTimeoutInMilliseconds),
                 AllowBackgroundDistributedCacheOperations = fusionCacheOptions.AllowBackgroundDistributedCacheOperationsEnabled,
 
                 // Jittering

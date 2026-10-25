@@ -124,20 +124,32 @@ public class DistributedLogsFusionCacheOptions
     public int FactoryHardTimeoutInMilliseconds { get; set; } = 1500;
 
     /// <summary>
-    /// Gets or sets the soft timeout duration, in minutes, for the distributed cache.
+    /// Obsolete: this value is no longer used. The distributed cache timeouts are operation timeouts, not entry
+    /// lifetimes, and must be expressed in milliseconds.
     /// </summary>
-    /// <remarks>This property determines how long cached items remain valid before they are considered
-    /// expired. It is important to set this value according to the application's caching strategy to optimize
-    /// performance and resource usage.</remarks>
+    [Obsolete("No longer used: use DistributedCacheSoftTimeoutInMilliseconds instead.")]
     public int DistributedCacheSoftTimeoutInMinutes { get; set; } = 10;
 
     /// <summary>
-    /// Gets or sets the hard timeout duration, in minutes, for the distributed cache.
+    /// Obsolete: this value is no longer used. The distributed cache timeouts are operation timeouts, not entry
+    /// lifetimes, and must be expressed in milliseconds.
     /// </summary>
-    /// <remarks>This property defines the maximum time that cached items are retained before they are
-    /// considered expired. Adjusting this value can help manage cache memory usage and performance based on application
-    /// needs.</remarks>
+    [Obsolete("No longer used: use DistributedCacheHardTimeoutInMilliseconds instead.")]
     public int DistributedCacheHardTimeoutInMinutes { get; set; } = 20;
+
+    /// <summary>
+    /// Gets or sets the soft timeout, in milliseconds, of a single distributed cache (Redis) operation.
+    /// </summary>
+    /// <remarks>When the timeout elapses, FusionCache can keep serving a stale value while the operation
+    /// completes in the background. The default value is 1000 milliseconds.</remarks>
+    public int DistributedCacheSoftTimeoutInMilliseconds { get; set; } = 1000;
+
+    /// <summary>
+    /// Gets or sets the hard timeout, in milliseconds, of a single distributed cache (Redis) operation.
+    /// </summary>
+    /// <remarks>An operation that exceeds this timeout is abandoned, so a slow Redis cannot block the callers
+    /// for long. It should be greater than the soft timeout. The default value is 2000 milliseconds.</remarks>
+    public int DistributedCacheHardTimeoutInMilliseconds { get; set; } = 2000;
 
     /// <summary>
     /// Gets or sets a value indicating whether background operations for distributed cache are enabled.
