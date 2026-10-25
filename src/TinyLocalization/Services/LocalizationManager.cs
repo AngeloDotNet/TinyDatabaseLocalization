@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TinyLocalization.Data;
 using TinyLocalization.Entities;
+using TinyLocalization.Localization;
 using TinyLocalization.Options;
 using TinyLocalization.Services.Interfaces;
 using ZiggyCreatures.Caching.Fusion;
@@ -13,8 +14,9 @@ namespace TinyLocalization.Services;
 /// translations in both the database and cache.
 /// </summary>
 /// <remarks>The LocalizationManager ensures that changes to translations are reflected in both the underlying
-/// database and the distributed cache. When a translation is added, updated, or removed, the corresponding cache entry
-/// is invalidated locally, and, if a publisher is provided, invalidation messages are sent to other instances to
+/// database and the distributed cache. The localizer caches all the translations of a resource for a culture as a
+/// single snapshot, so when a translation is added, updated, or removed the snapshot of its (resource, culture) is
+/// invalidated locally and, if a publisher is provided, invalidation messages are sent to other instances to
 /// maintain consistency across distributed environments.</remarks>
 /// <param name="dbContext">The database context used to access and persist localization data.</param>
 /// <param name="fusionCache">The cache instance used to store and retrieve localization resources for improved performance.</param>
@@ -24,75 +26,29 @@ namespace TinyLocalization.Services;
 public class LocalizationManager(LocalizationDbContext dbContext, IFusionCache fusionCache, DbLocalizationOptions options, ILogger<LocalizationManager> logger,
     ICacheInvalidationPublisher? publisher = null) : ILocalizationManager
 {
-    private string BuildCacheKey(string resource, string key, string culture)
-    {
-        var cultureSegment = string.IsNullOrEmpty(culture) ? "_" : culture;
-        return $"{options.CacheKeyPrefix}:{resource}:{key}:{cultureSegment}";
-    }
-
-    public async Task AddOrUpdateAsync(Translation translation, CancellationToken cancellationToken = default)
-    {
-        var existing = await dbContext.Translations.FirstOrDefaultAsync(t
-            => t.Resource == translation.Resource && t.Key == translation.Key && t.Culture == translation.Culture, cancellationToken);
-
-        if (existing == null)
-        {
-            dbContext.Translations.Add(translation);
-
-            logger.LogInformation("Added translation {Resource}/{Key}/{Culture}", translation.Resource, translation.Key, translation.Culture);
-        }
-        else
-        {
-            existing.Value = translation.Value;
-            dbContext.Translations.Update(existing);
-
-            logger.LogInformation("Updated translation {Resource}/{Key}/{Culture}", translation.Resource, translation.Key, translation.Culture);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        // Invalidate cache for that exact resource/key/culture locally
-        var cacheKey = BuildCacheKey(translation.Resource, translation.Key, translation.Culture);
-        fusionCache.Remove(cacheKey, token: cancellationToken);
-
-        logger.LogDebug("Removed local cache key {CacheKey}", cacheKey);
-
-        // Publish invalidation to other instances (if publisher is available)
-        if (publisher != null)
-        {
-            try
-            {
-                await publisher.PublishSingleInvalidationAsync(translation.Resource, translation.Key, translation.Culture, cancellationToken);
-
-                logger.LogInformation("Published single invalidation for {Resource}/{Key}/{Culture}", translation.Resource, translation.Key, translation.Culture);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to publish single invalidation for {Resource}/{Key}/{Culture}", translation.Resource, translation.Key, translation.Culture);
-            }
-        }
-    }
-
-    public async Task<bool> RemoveAsync(string resource, string key, string culture, CancellationToken cancellationToken = default)
-    {
-        var existing = await dbContext.Translations.FirstOrDefaultAsync(t
+    private Task<Translation?> FindAsync(string resource, string key, string culture, CancellationToken cancellationToken)
+        // The entity is modified or removed afterwards, so tracking must be explicit: the context may be
+        // configured with NoTracking by default.
+        => dbContext.Translations.AsTracking().FirstOrDefaultAsync(t
             => t.Resource == resource && t.Key == key && t.Culture == culture, cancellationToken);
 
-        if (existing == null)
-        {
-            return false;
-        }
+    private async Task RemoveSnapshotFromCacheAsync(string resource, string culture)
+    {
+        var cacheKey = LocalizationCacheKeys.ForSnapshot(options.CacheKeyPrefix, resource, culture);
 
-        dbContext.Translations.Remove(existing);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        // No cancellation token on purpose: the database change is already committed at this point and skipping
+        // the invalidation would leave a stale snapshot in the cache.
+        await fusionCache.RemoveAsync(cacheKey);
 
-        // invalidate cache locally
-        var cacheKey = BuildCacheKey(resource, key, culture);
-        fusionCache.Remove(cacheKey, token: cancellationToken);
+        logger.LogDebug("Removed local cache key {CacheKey}", cacheKey);
+    }
 
-        logger.LogInformation("Removed translation and local cache for {Resource}/{Key}/{Culture}", resource, key, culture);
+    private async Task InvalidateSingleAsync(string resource, string key, string culture, CancellationToken cancellationToken)
+    {
+        // Invalidate the snapshot that contains this translation (it holds all the keys of the resource for the culture)
+        await RemoveSnapshotFromCacheAsync(resource, culture);
 
-        // publish invalidation
+        // Publish invalidation to other instances (if publisher is available)
         if (publisher != null)
         {
             try
@@ -106,40 +62,103 @@ public class LocalizationManager(LocalizationDbContext dbContext, IFusionCache f
                 logger.LogWarning(ex, "Failed to publish single invalidation for {Resource}/{Key}/{Culture}", resource, key, culture);
             }
         }
+    }
+
+    public async Task AddOrUpdateAsync(Translation translation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(translation);
+
+        var existing = await FindAsync(translation.Resource, translation.Key, translation.Culture, cancellationToken);
+
+        if (existing == null)
+        {
+            dbContext.Translations.Add(translation);
+
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                logger.LogInformation("Added translation {Resource}/{Key}/{Culture}", translation.Resource, translation.Key, translation.Culture);
+            }
+            catch (DbUpdateException)
+            {
+                // Another writer may have inserted the same (resource, key, culture) after our lookup and hit the
+                // unique index: detach our entity and apply the value as an update instead.
+                dbContext.Entry(translation).State = EntityState.Detached;
+
+                existing = await FindAsync(translation.Resource, translation.Key, translation.Culture, cancellationToken);
+
+                if (existing == null)
+                {
+                    // The failure had a different cause
+                    throw;
+                }
+
+                existing.Value = translation.Value;
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                logger.LogInformation("Updated translation {Resource}/{Key}/{Culture} after a concurrent insert", translation.Resource, translation.Key, translation.Culture);
+            }
+        }
+        else
+        {
+            existing.Value = translation.Value;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation("Updated translation {Resource}/{Key}/{Culture}", translation.Resource, translation.Key, translation.Culture);
+        }
+
+        await InvalidateSingleAsync(translation.Resource, translation.Key, translation.Culture, cancellationToken);
+    }
+
+    public async Task<bool> RemoveAsync(string resource, string key, string culture, CancellationToken cancellationToken = default)
+    {
+        var existing = await FindAsync(resource, key, culture, cancellationToken);
+
+        if (existing == null)
+        {
+            return false;
+        }
+
+        dbContext.Translations.Remove(existing);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Removed translation {Resource}/{Key}/{Culture}", resource, key, culture);
+
+        await InvalidateSingleAsync(resource, key, culture, cancellationToken);
 
         return true;
     }
 
     public async Task InvalidateResourceAsync(string resource, CancellationToken cancellationToken = default)
     {
-        // enumerate known keys+cultures for this resource so we can invalidate locally and publish the exact list
+        // Enumerate the known keys+cultures for this resource: the cultures tell which snapshots to drop locally,
+        // the full list is what the publisher sends to the other instances.
         var entries = await dbContext.Translations
+            .AsNoTracking()
             .Where(t => t.Resource == resource)
             .Select(t => new { t.Key, t.Culture })
             .ToListAsync(cancellationToken);
 
-        var invalidationKeys = entries
-            .Select(e => new InvalidationKey(e.Key, e.Culture))
-            .ToList()
-            .AsEnumerable();
-
-        // Remove local cache entries for each
-        foreach (var ik in invalidationKeys)
+        // Remove the local snapshot of each culture. Cultures that no longer have any row in the database are not
+        // listed here: their snapshot expires with the cache duration.
+        foreach (var culture in entries.Select(e => e.Culture).Distinct())
         {
-            var cacheKey = BuildCacheKey(resource, ik.Key, ik.Culture);
-            fusionCache.Remove(cacheKey, token: cancellationToken);
-
-            logger.LogDebug("Removed local cache key {CacheKey} during resource invalidation", cacheKey);
+            await RemoveSnapshotFromCacheAsync(resource, culture);
         }
 
         // Publish resource-level invalidation with explicit list of keys so remote instances don't need to query DB
         if (publisher != null)
         {
+            var invalidationKeys = entries
+                .Select(e => new InvalidationKey(e.Key, e.Culture))
+                .ToList();
+
             try
             {
                 await publisher.PublishResourceInvalidationAsync(resource, invalidationKeys, cancellationToken);
 
-                logger.LogInformation("Published resource invalidation for {Resource} with {Count} entries", resource, invalidationKeys.Count());
+                logger.LogInformation("Published resource invalidation for {Resource} with {Count} entries", resource, invalidationKeys.Count);
             }
             catch (Exception ex)
             {

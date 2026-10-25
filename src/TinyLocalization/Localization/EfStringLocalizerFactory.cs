@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Localization;
 using TinyLocalization.Options;
 using ZiggyCreatures.Caching.Fusion;
@@ -29,7 +30,7 @@ public class EfStringLocalizerFactory(IServiceProvider serviceProvider, IFusionC
     public IStringLocalizer Create(Type resourceSource)
     {
         var resource = resourceSource.FullName ?? resourceSource.Name;
-        return new EfStringLocalizer(serviceProvider, resource, fusionCache, options);
+        return GetOrCreateLocalizer(resource);
     }
 
     /// <summary>
@@ -47,6 +48,23 @@ public class EfStringLocalizerFactory(IServiceProvider serviceProvider, IFusionC
     {
         // baseName could be e.g. "Shared", we'll combine baseName/location to form a resource key
         var resource = string.IsNullOrEmpty(location) ? baseName : $"{location}.{baseName}";
-        return new EfStringLocalizer(serviceProvider, resource, fusionCache, options);
+        return GetOrCreateLocalizer(resource);
+    }
+
+    /// <summary>
+    /// Localizers are stateless apart from their own key cache and are thread-safe, so one instance per resource is
+    /// shared instead of allocating a new one every time an <c>IStringLocalizer&lt;T&gt;</c> is resolved.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, EfStringLocalizer> localizers = new(StringComparer.Ordinal);
+
+    private EfStringLocalizer GetOrCreateLocalizer(string resource)
+    {
+        // fast path without allocating a closure on every call
+        if (localizers.TryGetValue(resource, out var existing))
+        {
+            return existing;
+        }
+
+        return localizers.GetOrAdd(resource, r => new EfStringLocalizer(serviceProvider, r, fusionCache, options));
     }
 }
