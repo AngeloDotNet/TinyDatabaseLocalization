@@ -5,6 +5,8 @@ VisualStudioVersion = 18.3.11415.281
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TinyLocalization", "src\TinyLocalization\TinyLocalization.csproj", "{059DC60D-CE5E-458E-8C32-EA11CE167D55}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TinyLocalization.IntegrationTests", "tests\TinyLocalization.IntegrationTests\TinyLocalization.IntegrationTests.csproj", "{A3C1E8D2-5B74-4F09-8E6A-2D9B7C4F1A35}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{7071C5F7-42B6-4E85-99B5-5BFD194173F4}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -24,6 +26,10 @@ Global
 		{059DC60D-CE5E-458E-8C32-EA11CE167D55}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{059DC60D-CE5E-458E-8C32-EA11CE167D55}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{059DC60D-CE5E-458E-8C32-EA11CE167D55}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3C1E8D2-5B74-4F09-8E6A-2D9B7C4F1A35}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3C1E8D2-5B74-4F09-8E6A-2D9B7C4F1A35}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3C1E8D2-5B74-4F09-8E6A-2D9B7C4F1A35}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3C1E8D2-5B74-4F09-8E6A-2D9B7C4F1A35}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
