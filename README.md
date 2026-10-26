@@ -12,7 +12,7 @@
   <a href="https://www.nuget.org/packages/TinyLocalization"><img alt="NuGet" src="https://img.shields.io/nuget/v/TinyLocalization?style=flat-square&logo=nuget" /></a>
   <a href="https://www.nuget.org/packages/TinyLocalization"><img alt="NuGet downloads" src="https://img.shields.io/nuget/dt/TinyLocalization?style=flat-square&logo=nuget" /></a>
   <a href="https://github.com/AngeloDotNet/TinyDatabaseLocalization/actions/workflows/publish.yml"><img alt="Publish" src="https://img.shields.io/github/actions/workflow/status/AngeloDotNet/TinyDatabaseLocalization/publish.yml?style=flat-square&label=publish" /></a>
-  <img alt=".NET 8 | 9 | 10" src="https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-512BD4?style=flat-square&logo=dotnet" />
+  <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet" />
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green?style=flat-square" /></a>
 </p>
 
@@ -39,7 +39,7 @@ TinyLocalization lets an application keep its translations in a database instead
 - Keeps lookups fast with [FusionCache](https://github.com/ZiggyCreatures/FusionCache): in-memory by default, with optional Redis as a second level and as a backplane for multi-instance deployments.
 - Ships a small `ILocalizationManager` service to add, update, remove and invalidate translations from your own admin screens or APIs.
 
-It targets **.NET 8, .NET 9 and .NET 10** and is built on Entity Framework Core.
+It targets **.NET 10** and is built on Entity Framework Core.
 
 ## Features
 
@@ -69,7 +69,7 @@ It targets **.NET 8, .NET 9 and .NET 10** and is built on Entity Framework Core.
 
 ### Prerequisites
 
-- .NET 8, 9 or 10 SDK
+- .NET 10 SDK
 - A supported database (SQLite is the easiest way to try the library)
 - Redis, only if you want a distributed cache or a backplane (optional)
 
