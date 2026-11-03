@@ -28,7 +28,7 @@
   <a href="#license">License</a>
 </p>
 
----
+<img width="1000" height="420" alt="tinylocalization-cover" src="https://github.com/user-attachments/assets/6385a252-2566-4357-aecd-5f0c3c347baf" />
 
 ## Overview
 
